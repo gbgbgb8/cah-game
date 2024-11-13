@@ -326,7 +326,7 @@ function startGame(gameSetup) {
     updateGameDisplay();
 }
 
-// Add updateGameDisplay function
+// Update updateGameDisplay function
 function updateGameDisplay() {
     if (gameState.phase === GAME_PHASES.GAME_OVER) {
         showGameOver();
@@ -353,7 +353,9 @@ function updateGameDisplay() {
     } else {
         const waitingMessage = document.createElement('div');
         waitingMessage.className = 'czar-message';
-        waitingMessage.textContent = "Waiting for the Card Czar to pick...";
+        waitingMessage.textContent = gameState.phase === GAME_PHASES.JUDGING ? 
+            "Waiting for the Card Czar to pick..." :
+            "Waiting for other players...";
         elements.displays.playerHand.appendChild(waitingMessage);
     }
     
@@ -362,6 +364,12 @@ function updateGameDisplay() {
     
     // Update played cards
     updatePlayedCards();
+    
+    console.log('Display updated:', {
+        phase: gameState.phase,
+        isCzar: gameState.czar === gameState.peer.id,
+        cardsShown: gameState.playedCards.length
+    });
 }
 
 // Add createCardElement function
@@ -454,7 +462,7 @@ function initializePeer() {
     });
 }
 
-// Update handlePlayedCard function to broadcast played cards to all players
+// Update handlePlayedCard function to ensure judging phase starts
 function handlePlayedCard(data) {
     console.log('Handling played card:', data);
     
@@ -484,47 +492,41 @@ function handlePlayedCard(data) {
                 phase: gameState.phase
             }
         });
-    }
-    
-    console.log('Current played cards:', gameState.playedCards);
-    console.log('Total players:', gameState.players.length);
-    console.log('Current czar:', gameState.czar);
-    
-    // Check if all non-czar players have played
-    const nonCzarPlayers = gameState.players.length - 1; // Subtract 1 for czar
-    if (gameState.playedCards.length === nonCzarPlayers) {
-        console.log('All players have played, starting judging phase');
-        if (gameState.isHost) {
+        
+        // Check if all non-czar players have played
+        const nonCzarPlayers = gameState.players.length - 1; // Subtract 1 for czar
+        if (gameState.playedCards.length === nonCzarPlayers) {
+            console.log('All players have played, starting judging phase');
             startJudging();
+            return; // Exit early since startJudging will call updateGameDisplay
         }
     }
     
     updateGameDisplay();
 }
 
+// Update startJudging function
 function startJudging() {
     console.log('Starting judging phase...');
     gameState.phase = GAME_PHASES.JUDGING;
     
-    // Reveal all cards
-    if (gameState.isHost) {
-        // Create a deep copy of played cards to prevent reference issues
-        const cardsWithData = JSON.parse(JSON.stringify(gameState.playedCards));
-        const shuffledCards = _.shuffle(cardsWithData);
-        
-        console.log('Host broadcasting judging start with cards:', shuffledCards);
-        broadcastToAll({
-            type: 'judging_start',
-            data: {
-                cards: shuffledCards,
-                blackCard: gameState.blackCard,
-                phase: GAME_PHASES.JUDGING
-            }
-        });
-        
-        // Update local played cards with shuffled order
-        gameState.playedCards = shuffledCards;
-    }
+    // Create a deep copy of played cards to prevent reference issues
+    const cardsWithData = JSON.parse(JSON.stringify(gameState.playedCards));
+    const shuffledCards = _.shuffle(cardsWithData);
+    
+    console.log('Broadcasting judging start with cards:', shuffledCards);
+    broadcastToAll({
+        type: 'judging_start',
+        data: {
+            cards: shuffledCards,
+            blackCard: gameState.blackCard,
+            phase: GAME_PHASES.JUDGING
+        }
+    });
+    
+    // Update local played cards with shuffled order
+    gameState.playedCards = shuffledCards;
+    gameState.judgingCards = shuffledCards;
     
     updateGameDisplay();
 }
