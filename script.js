@@ -97,33 +97,17 @@ function hideConnectionStatus() {
     elements.displays.connectionStatus.classList.add('hidden');
 }
 
-function generateRoomCode() {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
-}
-
 // PeerJS Connection Setup
-function initializePeer(useRoomCode = false) {
+function initializePeer() {
     return new Promise((resolve, reject) => {
         showConnectionStatus('Connecting to server...');
         
-        // If joining, use room code as prefix for peer ID
-        const peerConfig = {
+        const peer = new Peer(null, {
             host: '0.peerjs.com',
             port: 443,
             secure: true,
-            debug: 1,
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                ]
-            }
-        };
-
-        // When joining, create a peer ID that includes the room code
-        const peer = useRoomCode 
-            ? new Peer(`${gameState.roomCode}-${Math.random().toString(36).substring(2, 9)}`, peerConfig)
-            : new Peer(null, peerConfig);
+            debug: 1
+        });
 
         const timeout = setTimeout(() => {
             peer.destroy();
@@ -209,10 +193,10 @@ async function createRoom() {
 
     try {
         gameState.playerName = elements.inputs.playerName.value;
-        gameState.roomCode = generateRoomCode();
         gameState.isHost = true;
         
-        const peer = await initializePeer(false);
+        const peer = await initializePeer();
+        gameState.roomCode = peer.id;
         gameState.hostPeerId = peer.id;
         
         peer.on('connection', handleConnection);
@@ -241,10 +225,10 @@ async function joinRoom() {
 
     try {
         gameState.playerName = elements.inputs.playerName.value;
-        gameState.roomCode = elements.inputs.roomCode.value.toUpperCase();
+        gameState.roomCode = elements.inputs.roomCode.value;
+        gameState.hostPeerId = gameState.roomCode;
         
-        // Initialize peer with room code prefix
-        await initializePeer(true);
+        await initializePeer();
         await connectToHost();
         
         showScreen('lobby');
