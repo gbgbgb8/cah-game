@@ -102,12 +102,12 @@ function generateRoomCode() {
 }
 
 // PeerJS Connection Setup
-function initializePeer() {
+function initializePeer(useRoomCode = false) {
     return new Promise((resolve, reject) => {
         showConnectionStatus('Connecting to server...');
         
-        // Using 0.peerjs.com - one of PeerJS's public servers
-        const peer = new Peer(null, {
+        // If joining, use room code as prefix for peer ID
+        const peerConfig = {
             host: '0.peerjs.com',
             port: 443,
             secure: true,
@@ -118,7 +118,12 @@ function initializePeer() {
                     { urls: 'stun:stun1.l.google.com:19302' },
                 ]
             }
-        });
+        };
+
+        // When joining, create a peer ID that includes the room code
+        const peer = useRoomCode 
+            ? new Peer(`${gameState.roomCode}-${Math.random().toString(36).substring(2, 9)}`, peerConfig)
+            : new Peer(null, peerConfig);
 
         const timeout = setTimeout(() => {
             peer.destroy();
@@ -207,27 +212,10 @@ async function createRoom() {
         gameState.roomCode = generateRoomCode();
         gameState.isHost = true;
         
-        const peer = await initializePeer();
+        const peer = await initializePeer(false);
         gameState.hostPeerId = peer.id;
         
-        // Listen for room code verification requests
-        peer.on('connection', (conn) => {
-            conn.on('data', (message) => {
-                if (message.type === 'verify_room') {
-                    if (message.data.roomCode === gameState.roomCode) {
-                        conn.send({
-                            type: 'room_verified',
-                            data: {
-                                hostPeerId: peer.id,
-                                roomCode: gameState.roomCode
-                            }
-                        });
-                    }
-                } else {
-                    handleGameMessage(message);
-                }
-            });
-        });
+        peer.on('connection', handleConnection);
         
         gameState.players = [{
             id: peer.id,
@@ -255,7 +243,8 @@ async function joinRoom() {
         gameState.playerName = elements.inputs.playerName.value;
         gameState.roomCode = elements.inputs.roomCode.value.toUpperCase();
         
-        await initializePeer();
+        // Initialize peer with room code prefix
+        await initializePeer(true);
         await connectToHost();
         
         showScreen('lobby');
@@ -269,69 +258,33 @@ function connectToHost() {
     return new Promise((resolve, reject) => {
         showConnectionStatus('Connecting to room...');
         
-        // First, try to find the host's peer ID
-        const findHost = async () => {
-            // Connect to all peers to find the host
-            const peer = gameState.peer;
-            const clients = await peer.listAllPeers();
-            
-            for (const clientId of clients) {
-                if (clientId === peer.id) continue; // Skip self
-                
-                try {
-                    const conn = peer.connect(clientId);
-                    await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            reject(new Error('Connection timeout'));
-                        }, 5000);
-                        
-                        conn.on('open', () => {
-                            clearTimeout(timeout);
-                            conn.send({
-                                type: 'verify_room',
-                                data: { roomCode: gameState.roomCode }
-                            });
-                            
-                            conn.on('data', (message) => {
-                                if (message.type === 'room_verified' && 
-                                    message.data.roomCode === gameState.roomCode) {
-                                    resolve(message.data.hostPeerId);
-                                }
-                            });
-                        });
-                        
-                        conn.on('error', () => {
-                            clearTimeout(timeout);
-                            reject(new Error('Connection failed'));
-                        });
-                    });
-                    
-                    // If we found the host, connect properly
-                    const hostConn = peer.connect(conn.peer);
-                    hostConn.on('open', () => {
-                        gameState.connections[hostConn.peer] = hostConn;
-                        hostConn.send({
-                            type: 'join_request',
-                            data: {
-                                name: gameState.playerName,
-                                id: peer.id,
-                                roomCode: gameState.roomCode
-                            }
-                        });
-                        hostConn.on('data', handleGameMessage);
-                        resolve(hostConn);
-                    });
-                    
-                    return;
-                } catch (error) {
-                    console.log('Failed to connect to peer:', clientId);
-                    continue;
+        const conn = gameState.peer.connect(gameState.hostPeerId);
+        const timeout = setTimeout(() => {
+            conn.close();
+            reject(new Error('Connection timeout'));
+        }, 10000);
+
+        conn.on('open', () => {
+            clearTimeout(timeout);
+            gameState.connections[conn.peer] = conn;
+            conn.send({
+                type: 'join_request',
+                data: {
+                    name: gameState.playerName,
+                    id: gameState.peer.id,
+                    roomCode: gameState.roomCode
                 }
-            }
-            reject(new Error('Room not found'));
-        };
+            });
+            hideConnectionStatus();
+            resolve(conn);
+        });
+
+        conn.on('error', (err) => {
+            clearTimeout(timeout);
+            reject(err);
+        });
         
-        findHost().catch(reject);
+        conn.on('data', handleGameMessage);
     });
 }
 
