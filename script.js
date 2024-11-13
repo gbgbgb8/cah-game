@@ -489,12 +489,15 @@ function handlePlayedCard(data) {
     // Remove any existing plays from this player
     gameState.playedCards = gameState.playedCards.filter(card => card.playerId !== data.playerId);
     
-    // Add the new play
+    // Add the new play with complete data
     gameState.playedCards.push({
         playerId: data.playerId,
         playerName: data.playerName,
         card: data.card
     });
+    
+    // Log the current state for debugging
+    console.log('Current played cards:', gameState.playedCards);
     
     if (gameState.playedCards.length === gameState.players.length - 1) {
         // All players except czar have played
@@ -509,11 +512,15 @@ function startJudging() {
     
     // Reveal all cards
     if (gameState.isHost) {
-        const shuffledCards = _.shuffle([...gameState.playedCards]); // Create a copy before shuffling
+        // Create a copy with full card data before shuffling
+        const cardsWithData = [...gameState.playedCards];
+        const shuffledCards = _.shuffle(cardsWithData);
+        
         broadcastToAll({
             type: 'judging_start',
             data: {
-                cards: shuffledCards
+                cards: shuffledCards,
+                blackCard: gameState.blackCard // Include current black card
             }
         });
         
@@ -525,10 +532,16 @@ function startJudging() {
 }
 
 function handleCzarChoice(data) {
-    // Find the winning play
-    const winner = gameState.playedCards.find(card => card.playerId === data.winnerId);
+    // Find the winning play using both playerId and card data
+    const winner = gameState.playedCards.find(play => 
+        play.playerId === data.winnerId && 
+        play.card && 
+        play.playerName // Ensure we have all required data
+    );
+    
     if (!winner) {
         console.error('Winner not found:', data.winnerId);
+        console.log('Current played cards:', gameState.playedCards);
         return;
     }
     
@@ -642,7 +655,18 @@ function updatePlayedCards() {
 function selectWinner(winnerId) {
     if (gameState.phase !== GAME_PHASES.JUDGING || gameState.czar !== gameState.peer.id) return;
     
-    const winnerData = { winnerId };
+    const winner = gameState.playedCards.find(play => play.playerId === winnerId);
+    if (!winner) {
+        console.error('Cannot find winner to select:', winnerId);
+        return;
+    }
+    
+    const winnerData = {
+        winnerId: winnerId,
+        card: winner.card,
+        playerName: winner.playerName
+    };
+    
     broadcastToAll({
         type: 'czar_choice',
         data: winnerData
@@ -711,6 +735,7 @@ function showGameOver() {
 
 // Add function to handle judging start
 function handleJudgingStart(data) {
+    // Ensure we use the same shuffled cards as the host sent
     gameState.playedCards = data.cards;
     gameState.phase = GAME_PHASES.JUDGING;
     updateGameDisplay();
