@@ -21,7 +21,8 @@ let gameState = {
     peer: null,
     phase: null,
     roundNumber: 0,
-    scores: {}
+    scores: {},
+    hostPeerId: null
 };
 
 // DOM Elements
@@ -208,15 +209,31 @@ async function createRoom() {
         
         const peer = await initializePeer();
         gameState.hostPeerId = peer.id;
-        peer.on('connection', handleConnection);
+        
+        // Listen for room code verification requests
+        peer.on('connection', (conn) => {
+            conn.on('data', (message) => {
+                if (message.type === 'verify_room') {
+                    if (message.data.roomCode === gameState.roomCode) {
+                        conn.send({
+                            type: 'room_verified',
+                            data: {
+                                hostPeerId: peer.id,
+                                roomCode: gameState.roomCode
+                            }
+                        });
+                    }
+                } else {
+                    handleGameMessage(message);
+                }
+            });
+        });
         
         gameState.players = [{
             id: peer.id,
             name: gameState.playerName,
             isHost: true
         }];
-        
-        localStorage.setItem(gameState.roomCode, peer.id);
         
         showScreen('lobby');
         elements.displays.roomCode.textContent = gameState.roomCode;
@@ -252,40 +269,69 @@ function connectToHost() {
     return new Promise((resolve, reject) => {
         showConnectionStatus('Connecting to room...');
         
-        const hostPeerId = localStorage.getItem(gameState.roomCode);
-        
-        if (!hostPeerId) {
-            reject(new Error('Room not found'));
-            return;
-        }
-        
-        const conn = gameState.peer.connect(hostPeerId);
-        const timeout = setTimeout(() => {
-            conn.close();
-            reject(new Error('Connection timeout'));
-        }, 10000);
-
-        conn.on('open', () => {
-            clearTimeout(timeout);
-            gameState.connections[conn.peer] = conn;
-            conn.send({
-                type: 'join_request',
-                data: {
-                    name: gameState.playerName,
-                    id: gameState.peer.id,
-                    roomCode: gameState.roomCode
+        // First, try to find the host's peer ID
+        const findHost = async () => {
+            // Connect to all peers to find the host
+            const peer = gameState.peer;
+            const clients = await peer.listAllPeers();
+            
+            for (const clientId of clients) {
+                if (clientId === peer.id) continue; // Skip self
+                
+                try {
+                    const conn = peer.connect(clientId);
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            reject(new Error('Connection timeout'));
+                        }, 5000);
+                        
+                        conn.on('open', () => {
+                            clearTimeout(timeout);
+                            conn.send({
+                                type: 'verify_room',
+                                data: { roomCode: gameState.roomCode }
+                            });
+                            
+                            conn.on('data', (message) => {
+                                if (message.type === 'room_verified' && 
+                                    message.data.roomCode === gameState.roomCode) {
+                                    resolve(message.data.hostPeerId);
+                                }
+                            });
+                        });
+                        
+                        conn.on('error', () => {
+                            clearTimeout(timeout);
+                            reject(new Error('Connection failed'));
+                        });
+                    });
+                    
+                    // If we found the host, connect properly
+                    const hostConn = peer.connect(conn.peer);
+                    hostConn.on('open', () => {
+                        gameState.connections[hostConn.peer] = hostConn;
+                        hostConn.send({
+                            type: 'join_request',
+                            data: {
+                                name: gameState.playerName,
+                                id: peer.id,
+                                roomCode: gameState.roomCode
+                            }
+                        });
+                        hostConn.on('data', handleGameMessage);
+                        resolve(hostConn);
+                    });
+                    
+                    return;
+                } catch (error) {
+                    console.log('Failed to connect to peer:', clientId);
+                    continue;
                 }
-            });
-            hideConnectionStatus();
-            resolve(conn);
-        });
-
-        conn.on('error', (err) => {
-            clearTimeout(timeout);
-            reject(err);
-        });
+            }
+            reject(new Error('Room not found'));
+        };
         
-        conn.on('data', handleGameMessage);
+        findHost().catch(reject);
     });
 }
 
