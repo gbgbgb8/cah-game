@@ -248,6 +248,131 @@ function handleConnection(conn) {
     });
 }
 
+// Add setupRoomCodeCopy function
+function setupRoomCodeCopy() {
+    const roomCodeDisplay = elements.displays.roomCode;
+    roomCodeDisplay.title = 'Click to copy';
+    roomCodeDisplay.style.cursor = 'pointer';
+    
+    roomCodeDisplay.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(gameState.roomCode);
+            const originalText = roomCodeDisplay.textContent;
+            roomCodeDisplay.textContent = 'Copied!';
+            setTimeout(() => {
+                roomCodeDisplay.textContent = `Room Code: ${gameState.roomCode}`;
+            }, 1000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    });
+}
+
+// Add hostStartGame function
+function hostStartGame() {
+    if (!gameState.isHost) return;
+    
+    if (gameState.players.length < MIN_PLAYERS) {
+        showError(`Need at least ${MIN_PLAYERS} players to start`);
+        return;
+    }
+
+    const gameSetup = setupNewGame();
+    broadcastToAll({
+        type: 'start_game',
+        data: gameSetup
+    });
+    
+    startGame(gameSetup);
+}
+
+// Add setupNewGame function
+function setupNewGame() {
+    const shuffledBlackCards = _.shuffle(gameState.gameData.black);
+    const shuffledWhiteCards = _.shuffle(gameState.gameData.white);
+    
+    const playerHands = {};
+    gameState.players.forEach(player => {
+        playerHands[player.id] = shuffledWhiteCards.splice(0, CARDS_PER_HAND);
+        gameState.scores[player.id] = 0;
+    });
+    
+    // Choose first Czar randomly
+    const firstCzar = gameState.players[Math.floor(Math.random() * gameState.players.length)].id;
+    
+    return {
+        blackCards: shuffledBlackCards,
+        playerHands: playerHands,
+        firstCzar: firstCzar,
+        roundNumber: 1
+    };
+}
+
+// Add startGame function
+function startGame(gameSetup) {
+    gameState.hand = gameSetup.playerHands[gameState.peer.id];
+    gameState.blackCard = gameSetup.blackCards[0];
+    gameState.czar = gameSetup.firstCzar;
+    gameState.phase = GAME_PHASES.SELECTING;
+    gameState.roundNumber = gameSetup.roundNumber;
+    gameState.playedCards = [];
+    
+    showScreen('game');
+    updateGameDisplay();
+}
+
+// Add updateGameDisplay function
+function updateGameDisplay() {
+    if (gameState.phase === GAME_PHASES.GAME_OVER) {
+        showGameOver();
+        return;
+    }
+
+    // Update black card
+    elements.displays.blackCard.textContent = gameState.blackCard.text;
+    
+    // Update hand
+    elements.displays.playerHand.innerHTML = '';
+    if (gameState.czar === gameState.peer.id) {
+        const czarMessage = document.createElement('div');
+        czarMessage.className = 'czar-message';
+        czarMessage.textContent = gameState.phase === GAME_PHASES.SELECTING ? 
+            "You're the Card Czar! Wait for others to play their cards." :
+            "You're the Card Czar! Pick the funniest answer!";
+        elements.displays.playerHand.appendChild(czarMessage);
+    } else if (gameState.phase === GAME_PHASES.SELECTING && !gameState.selectedCard) {
+        gameState.hand.forEach((card, index) => {
+            const cardElement = createCardElement(card, index);
+            elements.displays.playerHand.appendChild(cardElement);
+        });
+    } else {
+        const waitingMessage = document.createElement('div');
+        waitingMessage.className = 'czar-message';
+        waitingMessage.textContent = "Waiting for the Card Czar to pick...";
+        elements.displays.playerHand.appendChild(waitingMessage);
+    }
+    
+    // Update players bar with scores and czar
+    updatePlayersBar();
+    
+    // Update played cards
+    updatePlayedCards();
+}
+
+// Add createCardElement function
+function createCardElement(card, index) {
+    const div = document.createElement('div');
+    div.className = 'white-card';
+    div.textContent = card.text;
+    
+    if (gameState.phase === GAME_PHASES.SELECTING && gameState.czar !== gameState.peer.id) {
+        div.onclick = () => playCard(index);
+    }
+    
+    return div;
+}
+
+// Update createRoom to setup room code copy
 async function createRoom() {
     if (!elements.inputs.playerName.value) {
         showError('Please enter your name');
@@ -259,14 +384,11 @@ async function createRoom() {
         gameState.isHost = true;
         
         const peer = await initializePeer();
-        // Use peer ID as room code
         gameState.roomCode = peer.id;
         gameState.hostPeerId = peer.id;
         
-        // Set up connection handler
         peer.on('connection', handleConnection);
         
-        // Initialize players list with host
         gameState.players = [{
             id: peer.id,
             name: gameState.playerName,
@@ -275,6 +397,7 @@ async function createRoom() {
         
         showScreen('lobby');
         elements.displays.roomCode.textContent = gameState.roomCode;
+        setupRoomCodeCopy();
         updatePlayersList();
         
         console.log('Room created:', {
