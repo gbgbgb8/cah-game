@@ -589,3 +589,94 @@ function updatePlayersList() {
         }
     }
 }
+
+// Add updatePlayersBar function
+function updatePlayersBar() {
+    elements.displays.playersBar.innerHTML = '';
+    gameState.players.forEach(player => {
+        const div = document.createElement('div');
+        div.className = `player-score ${player.id === gameState.czar ? 'czar' : ''}`;
+        div.innerHTML = `
+            <div>${player.name}</div>
+            <div>${gameState.scores[player.id] || 0} pts</div>
+            ${player.id === gameState.czar ? '<div>(Czar)</div>' : ''}
+        `;
+        elements.displays.playersBar.appendChild(div);
+    });
+}
+
+// Add playCard function
+function playCard(index) {
+    if (gameState.phase !== GAME_PHASES.SELECTING || gameState.czar === gameState.peer.id) return;
+    
+    const playedCard = gameState.hand.splice(index, 1)[0];
+    gameState.selectedCard = playedCard;
+    
+    broadcastToAll({
+        type: 'played_card',
+        data: {
+            playerId: gameState.peer.id,
+            playerName: gameState.playerName,
+            card: playedCard
+        }
+    });
+    
+    updateGameDisplay();
+}
+
+// Add updatePlayedCards function if it's missing
+function updatePlayedCards() {
+    elements.displays.playedCards.innerHTML = '';
+    
+    const cardsToShow = gameState.phase === GAME_PHASES.JUDGING ? 
+        (gameState.judgingCards || gameState.playedCards) : 
+        gameState.playedCards;
+    
+    if (gameState.phase === GAME_PHASES.SELECTING) {
+        cardsToShow.forEach(played => {
+            const div = document.createElement('div');
+            div.className = 'white-card face-down';
+            div.textContent = played.playerName + ' has played';
+            elements.displays.playedCards.appendChild(div);
+        });
+    } else {
+        cardsToShow.forEach(played => {
+            const div = document.createElement('div');
+            div.className = 'white-card' + 
+                (gameState.phase === GAME_PHASES.SHOWING_WINNER && 
+                 played.playerId === gameState.roundWinner?.playerId ? ' winner' : '');
+            
+            div.textContent = played.card.text;
+            
+            if (gameState.phase === GAME_PHASES.JUDGING && gameState.czar === gameState.peer.id) {
+                div.onclick = () => selectWinner(played.playerId);
+            }
+            
+            elements.displays.playedCards.appendChild(div);
+        });
+    }
+}
+
+// Add selectWinner function if it's missing
+function selectWinner(winnerId) {
+    if (gameState.phase !== GAME_PHASES.JUDGING || gameState.czar !== gameState.peer.id) return;
+    
+    const winner = gameState.playedCards.find(play => play.playerId === winnerId);
+    if (!winner) {
+        console.error('Cannot find winner to select:', winnerId);
+        return;
+    }
+    
+    const winnerData = {
+        winnerId: winnerId,
+        card: winner.card,
+        playerName: winner.playerName
+    };
+    
+    broadcastToAll({
+        type: 'czar_choice',
+        data: winnerData
+    });
+    
+    handleCzarChoice(winnerData);
+}
