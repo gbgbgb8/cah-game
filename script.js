@@ -1,3 +1,95 @@
+// Game Configuration
+const MIN_PLAYERS = 2;
+const CARDS_PER_HAND = 10;
+const POINTS_TO_WIN = 5;
+
+// Game State Management
+let gameState = {
+    screen: 'join',
+    playerName: '',
+    roomCode: '',
+    isHost: false,
+    players: [],
+    gameData: null,
+    hand: [],
+    blackCard: null,
+    playedCards: [],
+    roundWinner: null,
+    czar: null,
+    selectedCard: null,
+    connections: {},
+    peer: null,
+    phase: null,
+    judgingCards: null,
+    scores: {}
+};
+
+// Game Phases
+const GAME_PHASES = {
+    SELECTING: 'selecting',
+    JUDGING: 'judging',
+    SHOWING_WINNER: 'showing_winner',
+    GAME_OVER: 'game_over'
+};
+
+// DOM Elements
+const elements = {
+    screens: {
+        join: document.getElementById('joinScreen'),
+        lobby: document.getElementById('lobbyScreen'),
+        game: document.getElementById('gameScreen')
+    },
+    inputs: {
+        playerName: document.getElementById('playerNameInput'),
+        roomCode: document.getElementById('roomCodeInput')
+    },
+    buttons: {
+        join: document.getElementById('joinRoomBtn'),
+        create: document.getElementById('createRoomBtn'),
+        start: document.getElementById('startGameBtn')
+    },
+    displays: {
+        error: document.getElementById('errorMsg'),
+        roomCode: document.getElementById('roomCodeDisplay'),
+        playersList: document.getElementById('playersList'),
+        playersBar: document.getElementById('playersBar'),
+        blackCard: document.getElementById('blackCard'),
+        playedCards: document.getElementById('playedCards'),
+        playerHand: document.getElementById('playerHand'),
+        connectionStatus: document.getElementById('connectionStatus'),
+        connectionMessage: document.getElementById('connectionMessage')
+    }
+};
+
+// Utility Functions
+function showError(message) {
+    elements.displays.error.textContent = message;
+    elements.displays.error.classList.remove('hidden');
+}
+
+function hideError() {
+    elements.displays.error.textContent = '';
+    elements.displays.error.classList.add('hidden');
+}
+
+function showScreen(screenName) {
+    Object.values(elements.screens).forEach(screen => {
+        screen.classList.add('hidden');
+    });
+    elements.screens[screenName].classList.remove('hidden');
+    gameState.screen = screenName;
+}
+
+function showConnectionStatus(message, isError = false) {
+    elements.displays.connectionStatus.classList.remove('hidden');
+    elements.displays.connectionMessage.textContent = message;
+    elements.displays.connectionMessage.style.color = isError ? '#dc2626' : '#4b5563';
+}
+
+function hideConnectionStatus() {
+    elements.displays.connectionStatus.classList.add('hidden');
+}
+
 // Initialize game when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
     showConnectionStatus('Loading game data...');
