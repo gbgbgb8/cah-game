@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cards Against Humanity</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- PeerJS CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
+    <!-- Lodash CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Join Screen -->
+        <div id="joinScreen" class="screen">
+            <div class="card">
+                <h1>Cards Against Humanity</h1>
+                <div class="form-group">
+                    <input type="text" id="playerNameInput" placeholder="Your Name" maxlength="20">
+                    <input type="text" id="roomCodeInput" placeholder="Room Code" maxlength="6">
+                    <div id="errorMsg" class="error-message"></div>
+                    <button id="joinRoomBtn" class="btn btn-primary">Join Room</button>
+                    <div class="divider">- or -</div>
+                    <button id="createRoomBtn" class="btn btn-secondary">Create New Room</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobbyScreen" class="screen hidden">
+            <div class="card">
+                <h2>Game Lobby</h2>
+                <div class="room-code">Room Code: <span id="roomCodeDisplay"></span></div>
+                <div class="players-list">
+                    <h3>Players:</h3>
+                    <ul id="playersList"></ul>
+                </div>
+                <button id="startGameBtn" class="btn btn-success hidden">Start Game</button>
+                <div id="waitingMessage" class="waiting-message">
+                    Waiting for more players to join...
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="gameScreen" class="screen hidden">
+            <div class="game-container">
+                <div class="players-bar" id="playersBar"></div>
+                <div class="black-card-container">
+                    <div class="black-card" id="blackCard"></div>
+                </div>
+                <div class="played-cards" id="playedCards"></div>
+                <div class="hand-container" id="playerHand"></div>
+            </div>
+        </div>
+
+        <!-- Connection Status -->
+        <div id="connectionStatus" class="connection-status hidden">
+            <div class="alert">
+                <span id="connectionMessage">Connecting...</span>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
