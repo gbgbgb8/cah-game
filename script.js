@@ -209,6 +209,7 @@ async function createRoom() {
         
         showScreen('lobby');
         elements.displays.roomCode.textContent = gameState.roomCode;
+        setupRoomCodeCopy();
         elements.buttons.start.classList.remove('hidden');
         updatePlayersList();
     } catch (error) {
@@ -587,3 +588,23 @@ window.addEventListener('beforeunload', () => {
         localStorage.removeItem(gameState.roomCode);
     }
 });
+
+// Add after showScreen function
+function setupRoomCodeCopy() {
+    const roomCodeDisplay = elements.displays.roomCode;
+    roomCodeDisplay.title = 'Click to copy';
+    roomCodeDisplay.style.cursor = 'pointer';
+    
+    roomCodeDisplay.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(gameState.roomCode);
+            const originalText = roomCodeDisplay.textContent;
+            roomCodeDisplay.textContent = 'Copied!';
+            setTimeout(() => {
+                roomCodeDisplay.textContent = originalText;
+            }, 1000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    });
+}

@@ -196,9 +196,14 @@ h3 {
 /* Room code display */
 .room-code {
     text-align: center;
-    font-size: 1.25rem;
+    font-size: 1rem;
     color: #4b5563;
     margin: 1rem 0;
+    padding: 0.5rem;
+    background: #f3f4f6;
+    border-radius: 0.5rem;
+    word-break: break-all;
+    cursor: pointer;
 }
 
 /* Waiting message */
@@ -274,4 +279,10 @@ h3 {
     gap: 1rem;
     padding: 1rem;
     background: rgba(0, 0, 0, 0.9);
+}
+
+/* Add style for the room code input */
+#roomCodeInput {
+    font-family: monospace;
+    word-break: break-all;
 }
