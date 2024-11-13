@@ -1,3 +1,105 @@
+function handleConnection(conn) {
+    console.log('New connection:', conn.peer);
+    
+    gameState.connections[conn.peer] = conn;
+    
+    conn.on('data', (message) => {
+        message.peer = conn.peer; // Add sender's peer id to message
+        handleGameMessage(message);
+    });
+    
+    conn.on('close', () => {
+        console.log('Connection closed:', conn.peer);
+        delete gameState.connections[conn.peer];
+        // Remove player from game
+        gameState.players = gameState.players.filter(p => p.id !== conn.peer);
+        updatePlayersList();
+    });
+    
+    conn.on('error', (err) => {
+        console.error('Connection error:', err);
+        showError('Connection error occurred');
+    });
+}
+
+async function createRoom() {
+    if (!elements.inputs.playerName.value) {
+        showError('Please enter your name');
+        return;
+    }
+
+    try {
+        gameState.playerName = elements.inputs.playerName.value;
+        gameState.isHost = true;
+        
+        const peer = await initializePeer();
+        // Use peer ID as room code
+        gameState.roomCode = peer.id;
+        gameState.hostPeerId = peer.id;
+        
+        // Set up connection handler
+        peer.on('connection', handleConnection);
+        
+        // Initialize players list with host
+        gameState.players = [{
+            id: peer.id,
+            name: gameState.playerName,
+            isHost: true
+        }];
+        
+        showScreen('lobby');
+        elements.displays.roomCode.textContent = gameState.roomCode;
+        updatePlayersList();
+        
+        console.log('Room created:', {
+            roomCode: gameState.roomCode,
+            hostId: gameState.hostPeerId,
+            playerName: gameState.playerName
+        });
+    } catch (error) {
+        showError('Failed to create room. Please try again.');
+        console.error('Room creation error:', error);
+    }
+}
+
+function initializePeer() {
+    return new Promise((resolve, reject) => {
+        showConnectionStatus('Connecting to server...');
+        
+        const peer = new Peer(null, {
+            host: '0.peerjs.com',
+            port: 443,
+            secure: true,
+            debug: 1
+        });
+
+        const timeout = setTimeout(() => {
+            peer.destroy();
+            reject(new Error('Connection timeout'));
+        }, 15000);
+
+        peer.on('open', (id) => {
+            clearTimeout(timeout);
+            console.log('Connected with peer ID:', id);
+            hideConnectionStatus();
+            gameState.peer = peer;
+            resolve(peer);
+        });
+
+        peer.on('disconnected', () => {
+            showConnectionStatus('Disconnected. Attempting to reconnect...');
+            setTimeout(() => peer.reconnect(), 1000);
+        });
+
+        peer.on('error', (err) => {
+            clearTimeout(timeout);
+            console.error('Peer error:', err);
+            showConnectionStatus(`Connection error: ${err.type}`, true);
+            reject(err);
+        });
+    });
+}
+
 function handlePlayedCard(data) {
     console.log('Handling played card:', data);
     
