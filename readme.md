@@ -120,41 +120,37 @@ const peer = new Peer({
     host: 'peer.metered.live',
     port: 443,
     secure: true
-});let gameState = {
-    screen: 'join',
-    playerName: '',
-    roomCode: '',
-    isHost: false,
-    // ... more state properties
-};
+});
+```
 
-Network Protocol
+### Network Protocol
 Messages are passed between peers using a type-based system:
-javascriptCopy{
+```javascript
+{
     type: 'messageType',
     data: {
         // message specific data
     }
 }
-Future Improvements
-Phase 1 (Core Gameplay)
+```
 
-Complete basic game loop
-Improve connection reliability
-Add basic error handling
+### Future Improvements
 
-Phase 2 (Enhanced Features)
+#### Phase 1 (Core Gameplay)
+- Complete basic game loop
+- Improve connection reliability
+- Add basic error handling
 
-Add room chat
-Implement spectator mode
-Create custom game settings
+#### Phase 2 (Enhanced Features)
+- Add room chat
+- Implement spectator mode
+- Create custom game settings
 
-Phase 3 (Polish)
+#### Phase 3 (Polish)
+- Add animations
+- Improve UI/UX
+- Add sound effects
+- Create tutorial
 
-Add animations
-Improve UI/UX
-Add sound effects
-Create tutorial
-
-License
+### License
 MIT License - Feel free to use and modify
