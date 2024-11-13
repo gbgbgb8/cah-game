@@ -680,3 +680,148 @@ function selectWinner(winnerId) {
     
     handleCzarChoice(winnerData);
 }
+
+// Add handleCzarChoice function
+function handleCzarChoice(data) {
+    console.log('Handling czar choice:', data);
+    
+    // Use judgingCards if available, otherwise use playedCards
+    const cardsToCheck = gameState.judgingCards || gameState.playedCards;
+    console.log('Cards available for judging:', cardsToCheck);
+    
+    // Find the winning play using playerId
+    const winner = cardsToCheck.find(play => play.playerId === data.winnerId);
+    
+    if (!winner) {
+        console.error('Winner not found:', data.winnerId);
+        console.log('Available cards:', cardsToCheck);
+        return;
+    }
+    
+    gameState.roundWinner = winner;
+    gameState.scores[winner.playerId] = (gameState.scores[winner.playerId] || 0) + 1;
+    
+    // Check if someone won the game
+    if (gameState.scores[winner.playerId] >= POINTS_TO_WIN) {
+        gameState.gameWinner = winner;
+        gameState.phase = GAME_PHASES.GAME_OVER;
+        updateGameDisplay();
+        return;
+    }
+    
+    gameState.phase = GAME_PHASES.SHOWING_WINNER;
+    updateGameDisplay();
+    
+    // Start new round after delay, but only if we're the host
+    if (gameState.isHost) {
+        setTimeout(() => {
+            startNewRound();
+        }, 3000);
+    }
+}
+
+// Add startNewRound function
+function startNewRound() {
+    if (!gameState.isHost) return;
+    
+    // Store current state
+    const currentState = {
+        playedCards: gameState.playedCards,
+        judgingCards: gameState.judgingCards,
+        roundWinner: gameState.roundWinner
+    };
+    
+    // Rotate czar
+    const czarIndex = gameState.players.findIndex(p => p.id === gameState.czar);
+    const nextCzarIndex = (czarIndex + 1) % gameState.players.length;
+    const nextCzar = gameState.players[nextCzarIndex].id;
+    
+    // Get next black card
+    const nextBlackCard = gameState.gameData.black[gameState.roundNumber];
+    
+    // Deal new white cards to all players
+    const newCards = {};
+    gameState.players.forEach(player => {
+        if (player.id !== nextCzar) {
+            const newCard = gameState.gameData.white[
+                gameState.roundNumber * gameState.players.length + 
+                Object.keys(newCards).length
+            ];
+            if (newCard) {
+                newCards[player.id] = newCard;
+            }
+        }
+    });
+    
+    const newSetup = {
+        blackCard: nextBlackCard,
+        czar: nextCzar,
+        roundNumber: gameState.roundNumber + 1,
+        newCards: newCards,
+        previousState: currentState
+    };
+    
+    broadcastToAll({
+        type: 'new_round',
+        data: newSetup
+    });
+    
+    handleNewRound(newSetup);
+}
+
+// Add handleNewRound function if it's missing
+function handleNewRound(setup) {
+    // Store the current state before updating
+    const previousCzar = gameState.czar;
+    
+    // Update game state for new round
+    gameState.blackCard = setup.blackCard;
+    gameState.czar = setup.czar;
+    gameState.roundNumber = setup.roundNumber;
+    
+    // Only clear cards if we're the one who played them
+    if (previousCzar === gameState.peer.id) {
+        gameState.playedCards = [];
+        gameState.judgingCards = null;
+    }
+    
+    gameState.selectedCard = null;
+    gameState.roundWinner = null;
+    gameState.phase = GAME_PHASES.SELECTING;
+    
+    // Add new card to hand if we got one
+    if (setup.newCards && setup.newCards[gameState.peer.id]) {
+        gameState.hand.push(setup.newCards[gameState.peer.id]);
+    }
+    
+    console.log('New round state:', {
+        phase: gameState.phase,
+        czar: gameState.czar,
+        playedCards: gameState.playedCards,
+        hand: gameState.hand,
+        previousCzar: previousCzar
+    });
+    
+    updateGameDisplay();
+}
+
+// Add showGameOver function if it's missing
+function showGameOver() {
+    const winner = gameState.players.find(p => p.id === gameState.gameWinner.playerId);
+    
+    elements.displays.blackCard.innerHTML = `
+        <h2>Game Over!</h2>
+        <p>${winner.name} wins with ${gameState.scores[winner.id]} Awesome Points!</p>
+    `;
+    
+    elements.displays.playedCards.innerHTML = '';
+    elements.displays.playerHand.innerHTML = `
+        <button id="newGameBtn" class="btn btn-primary">Play Again</button>
+    `;
+    
+    document.getElementById('newGameBtn')?.addEventListener('click', () => {
+        if (gameState.isHost) {
+            hostStartGame();
+        }
+    });
+}
