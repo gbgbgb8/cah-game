@@ -1,7 +1,8 @@
 // Game Configuration
 const MIN_PLAYERS = 2;
-const CARDS_PER_HAND = 7;
+const CARDS_PER_HAND = 10;
 const ROUND_TIMEOUT = 120000; // 2 minutes
+const POINTS_TO_WIN = 5;
 
 // Game State Management
 let gameState = {
@@ -22,7 +23,8 @@ let gameState = {
     phase: null,
     roundNumber: 0,
     scores: {},
-    hostPeerId: null
+    hostPeerId: null,
+    gameWinner: null
 };
 
 // DOM Elements
@@ -299,10 +301,12 @@ function setupNewGame() {
         gameState.scores[player.id] = 0;
     });
     
+    const firstCzar = gameState.players[Math.floor(Math.random() * gameState.players.length)].id;
+    
     return {
         blackCards: shuffledBlackCards,
         playerHands: playerHands,
-        firstCzar: gameState.players[0].id,
+        firstCzar: firstCzar,
         roundNumber: 1
     };
 }
@@ -321,18 +325,33 @@ function startGame(gameSetup) {
 
 // UI update functions
 function updateGameDisplay() {
+    if (gameState.phase === GAME_PHASES.GAME_OVER) {
+        showGameOver();
+        return;
+    }
+
     // Update black card
     elements.displays.blackCard.textContent = gameState.blackCard.text;
     
     // Update hand
     elements.displays.playerHand.innerHTML = '';
-    gameState.hand.forEach((card, index) => {
-        const cardElement = createCardElement(card, index);
-        elements.displays.playerHand.appendChild(cardElement);
-    });
+    if (gameState.czar !== gameState.peer.id) {
+        gameState.hand.forEach((card, index) => {
+            const cardElement = createCardElement(card, index);
+            elements.displays.playerHand.appendChild(cardElement);
+        });
+    } else {
+        const czarMessage = document.createElement('div');
+        czarMessage.className = 'czar-message';
+        czarMessage.textContent = "You're the Card Czar! Wait for others to play their cards.";
+        elements.displays.playerHand.appendChild(czarMessage);
+    }
     
-    // Update players bar
+    // Update players bar with scores
     updatePlayersBar();
+    
+    // Update played cards
+    updatePlayedCards();
 }
 
 function createCardElement(card, index) {
@@ -353,7 +372,8 @@ function createCardElement(card, index) {
 const GAME_PHASES = {
     SELECTING: 'selecting',
     JUDGING: 'judging',
-    SHOWING_WINNER: 'showing_winner'
+    SHOWING_WINNER: 'showing_winner',
+    GAME_OVER: 'game_over'
 };
 
 // Add these utility functions
@@ -489,6 +509,13 @@ function handleCzarChoice(data) {
     gameState.roundWinner = winner;
     gameState.scores[winner.playerId] = (gameState.scores[winner.playerId] || 0) + 1;
     
+    if (gameState.scores[winner.playerId] >= POINTS_TO_WIN) {
+        gameState.gameWinner = winner;
+        gameState.phase = GAME_PHASES.GAME_OVER;
+        updateGameDisplay();
+        return;
+    }
+    
     gameState.phase = GAME_PHASES.SHOWING_WINNER;
     updateGameDisplay();
     
@@ -504,11 +531,25 @@ function startNewRound() {
     const nextCzarIndex = (czarIndex + 1) % gameState.players.length;
     const nextCzar = gameState.players[nextCzarIndex].id;
     
-    // Deal new cards
+    // Get next black card
+    const nextBlackCard = gameState.gameData.black[gameState.roundNumber];
+    
+    // Deal new white cards to all players who need them
+    const newCards = {};
+    gameState.players.forEach(player => {
+        if (player.id !== nextCzar && gameState.connections[player.id]) {
+            newCards[player.id] = gameState.gameData.white[
+                gameState.roundNumber * CARDS_PER_HAND + 
+                Object.keys(newCards).length
+            ];
+        }
+    });
+    
     const newSetup = {
-        blackCard: gameState.gameData.black[gameState.roundNumber],
+        blackCard: nextBlackCard,
         czar: nextCzar,
-        roundNumber: gameState.roundNumber + 1
+        roundNumber: gameState.roundNumber + 1,
+        newCards: newCards
     };
     
     broadcastToAll({
@@ -609,6 +650,26 @@ function setupRoomCodeCopy() {
             }, 1000);
         } catch (err) {
             console.error('Failed to copy:', err);
+        }
+    });
+}
+
+function showGameOver() {
+    const winner = gameState.players.find(p => p.id === gameState.gameWinner.playerId);
+    
+    elements.displays.blackCard.innerHTML = `
+        <h2>Game Over!</h2>
+        <p>${winner.name} wins with ${gameState.scores[winner.id]} Awesome Points!</p>
+    `;
+    
+    elements.displays.playedCards.innerHTML = '';
+    elements.displays.playerHand.innerHTML = `
+        <button id="newGameBtn" class="btn btn-primary">Play Again</button>
+    `;
+    
+    document.getElementById('newGameBtn')?.addEventListener('click', () => {
+        if (gameState.isHost) {
+            hostStartGame();
         }
     });
 }
