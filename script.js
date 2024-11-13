@@ -165,7 +165,7 @@ function handleGameMessage(message) {
             handleJoinRequest(message.data, message.peer);
             break;
         case 'player_list':
-            updatePlayerList(message.data);
+            updatePlayersList(message.data);
             break;
         case 'start_game':
             startGame(message.data);
@@ -405,11 +405,14 @@ function handleJoinRequest(data, peerId) {
     });
 }
 
-function updatePlayersList() {
+function updatePlayersList(players) {
+    if (!Array.isArray(players)) return;
+    gameState.players = players;
+    
     if (!elements.displays.playersList) return;
     
     elements.displays.playersList.innerHTML = '';
-    gameState.players.forEach(player => {
+    players.forEach(player => {
         const li = document.createElement('li');
         li.textContent = `${player.name}${player.isHost ? ' (Host)' : ''}`;
         elements.displays.playersList.appendChild(li);
@@ -441,7 +444,8 @@ function playCard(index) {
         type: 'played_card',
         data: {
             playerId: gameState.peer.id,
-            playerName: gameState.playerName
+            playerName: gameState.playerName,
+            card: playedCard
         }
     });
     
@@ -453,7 +457,7 @@ function handlePlayedCard(data) {
         gameState.playedCards.push({
             playerId: data.playerId,
             playerName: data.playerName,
-            card: null // Card is hidden until judging phase
+            card: data.card
         });
     }
     
@@ -549,7 +553,7 @@ function updatePlayedCards() {
             const div = document.createElement('div');
             div.className = 'white-card' + 
                 (gameState.phase === GAME_PHASES.SHOWING_WINNER && played === gameState.roundWinner ? ' winner' : '');
-            div.textContent = played.card.text;
+            div.textContent = played.card ? played.card.text : 'Card not revealed';
             
             if (gameState.phase === GAME_PHASES.JUDGING && gameState.czar === gameState.peer.id) {
                 div.onclick = () => selectWinner(played.playerId);
