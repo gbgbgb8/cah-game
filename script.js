@@ -1,3 +1,137 @@
+// Initialize game when DOM is loaded
+document.addEventListener('DOMContentLoaded', async () => {
+    showConnectionStatus('Loading game data...');
+    const loaded = await loadGameData();
+    if (!loaded) {
+        showError('Failed to load game data. Please refresh.');
+        return;
+    }
+    hideConnectionStatus();
+    
+    // Add button event listeners
+    elements.buttons.join.addEventListener('click', joinRoom);
+    elements.buttons.create.addEventListener('click', createRoom);
+    elements.buttons.start.addEventListener('click', hostStartGame);
+});
+
+// Add broadcastToAll utility function
+function broadcastToAll(message) {
+    Object.values(gameState.connections).forEach(conn => {
+        conn.send(message);
+    });
+}
+
+// Add joinRoom function
+async function joinRoom() {
+    if (!elements.inputs.playerName.value || !elements.inputs.roomCode.value) {
+        showError('Please enter your name and room code');
+        return;
+    }
+
+    try {
+        gameState.playerName = elements.inputs.playerName.value;
+        gameState.roomCode = elements.inputs.roomCode.value;
+        gameState.hostPeerId = gameState.roomCode; // Host's peer ID is the room code
+        
+        await initializePeer();
+        await connectToHost();
+        
+        showScreen('lobby');
+    } catch (error) {
+        showError('Failed to join room. Please check the room code and try again.');
+        console.error('Join room error:', error);
+    }
+}
+
+// Add connectToHost function
+function connectToHost() {
+    return new Promise((resolve, reject) => {
+        showConnectionStatus('Connecting to room...');
+        
+        const conn = gameState.peer.connect(gameState.hostPeerId);
+        const timeout = setTimeout(() => {
+            conn.close();
+            reject(new Error('Connection timeout'));
+        }, 10000);
+
+        conn.on('open', () => {
+            clearTimeout(timeout);
+            gameState.connections[conn.peer] = conn;
+            conn.send({
+                type: 'join_request',
+                data: {
+                    name: gameState.playerName,
+                    id: gameState.peer.id
+                }
+            });
+            
+            conn.on('data', (message) => {
+                message.peer = conn.peer;
+                handleGameMessage(message);
+            });
+            
+            hideConnectionStatus();
+            resolve(conn);
+        });
+
+        conn.on('error', (err) => {
+            clearTimeout(timeout);
+            reject(err);
+        });
+    });
+}
+
+// Add loadGameData function if it's missing
+async function loadGameData() {
+    try {
+        const response = await fetch('cah-cards-full.json');
+        const data = await response.json();
+        gameState.gameData = data[0]; // Using the first deck
+        return true;
+    } catch (error) {
+        console.error('Error loading game data:', error);
+        showError('Failed to load game cards');
+        return false;
+    }
+}
+
+// Update handleGameMessage to include all message types
+function handleGameMessage(message) {
+    console.log('Received message:', message);
+    switch (message.type) {
+        case 'error':
+            showError(message.data.message);
+            showScreen('join');
+            break;
+        case 'join_request':
+            handleJoinRequest(message.data, message.peer);
+            break;
+        case 'join_confirmed':
+            gameState.players = message.data.players;
+            updatePlayersList();
+            break;
+        case 'player_list':
+            gameState.players = message.data;
+            updatePlayersList();
+            break;
+        case 'start_game':
+            startGame(message.data);
+            break;
+        case 'played_card':
+            handlePlayedCard(message.data);
+            break;
+        case 'judging_start':
+            handleJudgingStart(message.data);
+            break;
+        case 'czar_choice':
+            handleCzarChoice(message.data);
+            break;
+        case 'new_round':
+            handleNewRound(message.data);
+            break;
+    }
+}
+
 function handleConnection(conn) {
     console.log('New connection:', conn.peer);
     
@@ -212,30 +346,6 @@ function handleJoinRequest(data, peerId) {
         } else {
             waitingMessage.textContent = `Waiting for more players... (Need ${MIN_PLAYERS - gameState.players.length} more)`;
         }
-    }
-}
-
-function handleGameMessage(message) {
-    console.log('Received message:', message);
-    switch (message.type) {
-        case 'error':
-            showError(message.data.message);
-            showScreen('join');
-            break;
-        case 'join_request':
-            handleJoinRequest(message.data, message.peer);
-            break;
-        case 'join_confirmed':
-            // Update our local player list when we join
-            gameState.players = message.data.players;
-            updatePlayersList();
-            break;
-        case 'player_list':
-            // Update player list when it changes
-            gameState.players = message.data;
-            updatePlayersList();
-            break;
-        // ... rest of the cases ...
     }
 }
 
