@@ -480,7 +480,8 @@ function handlePlayedCard(data) {
         broadcastToAll({
             type: 'cards_update',
             data: {
-                playedCards: gameState.playedCards
+                playedCards: gameState.playedCards,
+                phase: gameState.phase
             }
         });
     }
@@ -502,8 +503,7 @@ function handlePlayedCard(data) {
 }
 
 function startJudging() {
-    if (gameState.phase !== GAME_PHASES.SELECTING) return;
-    
+    console.log('Starting judging phase...');
     gameState.phase = GAME_PHASES.JUDGING;
     
     // Reveal all cards
@@ -512,11 +512,13 @@ function startJudging() {
         const cardsWithData = JSON.parse(JSON.stringify(gameState.playedCards));
         const shuffledCards = _.shuffle(cardsWithData);
         
+        console.log('Host broadcasting judging start with cards:', shuffledCards);
         broadcastToAll({
             type: 'judging_start',
             data: {
                 cards: shuffledCards,
-                blackCard: gameState.blackCard
+                blackCard: gameState.blackCard,
+                phase: GAME_PHASES.JUDGING
             }
         });
         
@@ -524,16 +526,20 @@ function startJudging() {
         gameState.playedCards = shuffledCards;
     }
     
-    console.log('Starting judging phase with cards:', gameState.playedCards);
     updateGameDisplay();
 }
 
 function handleJudgingStart(data) {
+    console.log('Received judging start data:', data);
     // Keep both copies of the cards
     gameState.judgingCards = data.cards;
     gameState.playedCards = [...data.cards]; // Make a copy
     gameState.phase = GAME_PHASES.JUDGING;
-    console.log('Received judging start, updating display with cards:', data.cards);
+    console.log('Updated game state for judging:', {
+        phase: gameState.phase,
+        cards: gameState.playedCards,
+        isCzar: gameState.czar === gameState.peer.id
+    });
     updateGameDisplay();
 }
 
@@ -645,6 +651,13 @@ function playCard(index) {
 function updatePlayedCards() {
     elements.displays.playedCards.innerHTML = '';
     
+    console.log('Updating played cards display:', {
+        phase: gameState.phase,
+        isCzar: gameState.czar === gameState.peer.id,
+        playedCards: gameState.playedCards,
+        judgingCards: gameState.judgingCards
+    });
+    
     // Use the appropriate cards array based on game phase
     const cardsToShow = gameState.phase === GAME_PHASES.JUDGING ? 
         (gameState.judgingCards || gameState.playedCards) : 
@@ -658,8 +671,23 @@ function updatePlayedCards() {
             div.textContent = played.playerName + ' has played';
             elements.displays.playedCards.appendChild(div);
         });
+    } else if (gameState.phase === GAME_PHASES.JUDGING) {
+        // During judging, show all cards face up
+        cardsToShow.forEach(played => {
+            const div = document.createElement('div');
+            div.className = 'white-card';
+            div.textContent = played.card.text;
+            
+            if (gameState.czar === gameState.peer.id) {
+                div.onclick = () => selectWinner(played.playerId);
+                div.style.cursor = 'pointer';
+                div.title = 'Click to select winner';
+            }
+            
+            elements.displays.playedCards.appendChild(div);
+        });
     } else {
-        // During judging or showing winner, show card text
+        // During showing winner phase
         cardsToShow.forEach(played => {
             const div = document.createElement('div');
             div.className = 'white-card' + 
@@ -667,20 +695,9 @@ function updatePlayedCards() {
                  played.playerId === gameState.roundWinner?.playerId ? ' winner' : '');
             
             div.textContent = played.card.text;
-            
-            if (gameState.phase === GAME_PHASES.JUDGING && gameState.czar === gameState.peer.id) {
-                div.onclick = () => selectWinner(played.playerId);
-            }
-            
             elements.displays.playedCards.appendChild(div);
         });
     }
-    
-    console.log('Updated played cards display:', {
-        phase: gameState.phase,
-        cardsShown: cardsToShow.length,
-        isCzar: gameState.czar === gameState.peer.id
-    });
 }
 
 // Add selectWinner function if it's missing
