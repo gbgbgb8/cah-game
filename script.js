@@ -175,8 +175,14 @@ function handleGameMessage(message) {
         case 'played_card':
             handlePlayedCard(message.data);
             break;
+        case 'judging_start':
+            handleJudgingStart(message.data);
+            break;
         case 'czar_choice':
             handleCzarChoice(message.data);
+            break;
+        case 'new_round':
+            handleNewRound(message.data);
             break;
     }
 }
@@ -335,19 +341,26 @@ function updateGameDisplay() {
     
     // Update hand
     elements.displays.playerHand.innerHTML = '';
-    if (gameState.czar !== gameState.peer.id) {
+    if (gameState.czar === gameState.peer.id) {
+        const czarMessage = document.createElement('div');
+        czarMessage.className = 'czar-message';
+        czarMessage.textContent = gameState.phase === GAME_PHASES.SELECTING ? 
+            "You're the Card Czar! Wait for others to play their cards." :
+            "You're the Card Czar! Pick the funniest answer!";
+        elements.displays.playerHand.appendChild(czarMessage);
+    } else if (gameState.phase === GAME_PHASES.SELECTING && !gameState.selectedCard) {
         gameState.hand.forEach((card, index) => {
             const cardElement = createCardElement(card, index);
             elements.displays.playerHand.appendChild(cardElement);
         });
     } else {
-        const czarMessage = document.createElement('div');
-        czarMessage.className = 'czar-message';
-        czarMessage.textContent = "You're the Card Czar! Wait for others to play their cards.";
-        elements.displays.playerHand.appendChild(czarMessage);
+        const waitingMessage = document.createElement('div');
+        waitingMessage.className = 'czar-message';
+        waitingMessage.textContent = "Waiting for the Card Czar to pick...";
+        elements.displays.playerHand.appendChild(waitingMessage);
     }
     
-    // Update players bar with scores
+    // Update players bar with scores and czar
     updatePlayersBar();
     
     // Update played cards
@@ -473,13 +486,15 @@ function playCard(index) {
 }
 
 function handlePlayedCard(data) {
-    if (!gameState.playedCards.some(card => card.playerId === data.playerId)) {
-        gameState.playedCards.push({
-            playerId: data.playerId,
-            playerName: data.playerName,
-            card: data.card
-        });
-    }
+    // Remove any existing plays from this player
+    gameState.playedCards = gameState.playedCards.filter(card => card.playerId !== data.playerId);
+    
+    // Add the new play
+    gameState.playedCards.push({
+        playerId: data.playerId,
+        playerName: data.playerName,
+        card: data.card
+    });
     
     if (gameState.playedCards.length === gameState.players.length - 1) {
         // All players except czar have played
@@ -494,21 +509,33 @@ function startJudging() {
     
     // Reveal all cards
     if (gameState.isHost) {
-        const shuffledCards = _.shuffle(gameState.playedCards);
+        const shuffledCards = _.shuffle([...gameState.playedCards]); // Create a copy before shuffling
         broadcastToAll({
             type: 'judging_start',
             data: {
                 cards: shuffledCards
             }
         });
+        
+        // Update local played cards with shuffled order
+        gameState.playedCards = shuffledCards;
     }
+    
+    updateGameDisplay();
 }
 
 function handleCzarChoice(data) {
+    // Find the winning play
     const winner = gameState.playedCards.find(card => card.playerId === data.winnerId);
+    if (!winner) {
+        console.error('Winner not found:', data.winnerId);
+        return;
+    }
+    
     gameState.roundWinner = winner;
     gameState.scores[winner.playerId] = (gameState.scores[winner.playerId] || 0) + 1;
     
+    // Check if someone won the game
     if (gameState.scores[winner.playerId] >= POINTS_TO_WIN) {
         gameState.gameWinner = winner;
         gameState.phase = GAME_PHASES.GAME_OVER;
@@ -520,7 +547,9 @@ function handleCzarChoice(data) {
     updateGameDisplay();
     
     // Start new round after delay
-    setTimeout(startNewRound, 3000);
+    if (gameState.isHost) {
+        setTimeout(startNewRound, 3000);
+    }
 }
 
 function startNewRound() {
@@ -534,14 +563,18 @@ function startNewRound() {
     // Get next black card
     const nextBlackCard = gameState.gameData.black[gameState.roundNumber];
     
-    // Deal new white cards to all players who need them
+    // Deal new white cards to all players
     const newCards = {};
     gameState.players.forEach(player => {
-        if (player.id !== nextCzar && gameState.connections[player.id]) {
-            newCards[player.id] = gameState.gameData.white[
-                gameState.roundNumber * CARDS_PER_HAND + 
+        if (player.id !== nextCzar) {
+            // Get a new card for each player who played
+            const newCard = gameState.gameData.white[
+                gameState.roundNumber * gameState.players.length + 
                 Object.keys(newCards).length
             ];
+            if (newCard) {
+                newCards[player.id] = newCard;
+            }
         }
     });
     
@@ -568,12 +601,9 @@ function handleNewRound(setup) {
     gameState.playedCards = [];
     gameState.selectedCard = null;
     
-    // Draw new card if needed
-    if (gameState.hand.length < CARDS_PER_HAND) {
-        const newCard = gameState.gameData.white[gameState.roundNumber * CARDS_PER_HAND + gameState.hand.length];
-        if (newCard) {
-            gameState.hand.push(newCard);
-        }
+    // Add new card to hand if we got one
+    if (setup.newCards && setup.newCards[gameState.peer.id]) {
+        gameState.hand.push(setup.newCards[gameState.peer.id]);
     }
     
     updateGameDisplay();
@@ -583,6 +613,7 @@ function updatePlayedCards() {
     elements.displays.playedCards.innerHTML = '';
     
     if (gameState.phase === GAME_PHASES.SELECTING) {
+        // Show face-down cards during selection
         gameState.playedCards.forEach(played => {
             const div = document.createElement('div');
             div.className = 'white-card face-down';
@@ -590,11 +621,14 @@ function updatePlayedCards() {
             elements.displays.playedCards.appendChild(div);
         });
     } else {
+        // Show cards face-up during judging and winner reveal
         gameState.playedCards.forEach(played => {
             const div = document.createElement('div');
             div.className = 'white-card' + 
-                (gameState.phase === GAME_PHASES.SHOWING_WINNER && played === gameState.roundWinner ? ' winner' : '');
-            div.textContent = played.card ? played.card.text : 'Card not revealed';
+                (gameState.phase === GAME_PHASES.SHOWING_WINNER && 
+                 played.playerId === gameState.roundWinner?.playerId ? ' winner' : '');
+            
+            div.textContent = played.card.text;
             
             if (gameState.phase === GAME_PHASES.JUDGING && gameState.czar === gameState.peer.id) {
                 div.onclick = () => selectWinner(played.playerId);
@@ -608,12 +642,13 @@ function updatePlayedCards() {
 function selectWinner(winnerId) {
     if (gameState.phase !== GAME_PHASES.JUDGING || gameState.czar !== gameState.peer.id) return;
     
+    const winnerData = { winnerId };
     broadcastToAll({
         type: 'czar_choice',
-        data: { winnerId }
+        data: winnerData
     });
     
-    handleCzarChoice({ winnerId });
+    handleCzarChoice(winnerData);
 }
 
 // Add this at the top of the file, after the gameState definition
@@ -672,4 +707,11 @@ function showGameOver() {
             hostStartGame();
         }
     });
+}
+
+// Add function to handle judging start
+function handleJudgingStart(data) {
+    gameState.playedCards = data.cards;
+    gameState.phase = GAME_PHASES.JUDGING;
+    updateGameDisplay();
 }
