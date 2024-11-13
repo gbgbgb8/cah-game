@@ -221,6 +221,11 @@ function handleGameMessage(message) {
         case 'new_round':
             handleNewRound(message.data);
             break;
+        case 'cards_update':
+            // Update played cards for all players
+            gameState.playedCards = message.data.playedCards;
+            updateGameDisplay();
+            break;
     }
 }
 
@@ -449,6 +454,7 @@ function initializePeer() {
     });
 }
 
+// Update handlePlayedCard function to broadcast played cards to all players
 function handlePlayedCard(data) {
     console.log('Handling played card:', data);
     
@@ -462,11 +468,22 @@ function handlePlayedCard(data) {
     gameState.playedCards = gameState.playedCards.filter(card => card.playerId !== data.playerId);
     
     // Add the new play with complete data
-    gameState.playedCards.push({
+    const playedCard = {
         playerId: data.playerId,
         playerName: data.playerName,
         card: data.card
-    });
+    };
+    gameState.playedCards.push(playedCard);
+    
+    // If we're the host, broadcast the updated played cards to all players
+    if (gameState.isHost) {
+        broadcastToAll({
+            type: 'cards_update',
+            data: {
+                playedCards: gameState.playedCards
+            }
+        });
+    }
     
     console.log('Current played cards:', gameState.playedCards);
     console.log('Total players:', gameState.players.length);
@@ -624,15 +641,17 @@ function playCard(index) {
     updateGameDisplay();
 }
 
-// Add updatePlayedCards function if it's missing
+// Update updatePlayedCards to show cards properly based on game phase
 function updatePlayedCards() {
     elements.displays.playedCards.innerHTML = '';
     
+    // Use the appropriate cards array based on game phase
     const cardsToShow = gameState.phase === GAME_PHASES.JUDGING ? 
         (gameState.judgingCards || gameState.playedCards) : 
         gameState.playedCards;
     
     if (gameState.phase === GAME_PHASES.SELECTING) {
+        // During selection, show face-down cards for played cards
         cardsToShow.forEach(played => {
             const div = document.createElement('div');
             div.className = 'white-card face-down';
@@ -640,6 +659,7 @@ function updatePlayedCards() {
             elements.displays.playedCards.appendChild(div);
         });
     } else {
+        // During judging or showing winner, show card text
         cardsToShow.forEach(played => {
             const div = document.createElement('div');
             div.className = 'white-card' + 
@@ -655,6 +675,12 @@ function updatePlayedCards() {
             elements.displays.playedCards.appendChild(div);
         });
     }
+    
+    console.log('Updated played cards display:', {
+        phase: gameState.phase,
+        cardsShown: cardsToShow.length,
+        isCzar: gameState.czar === gameState.peer.id
+    });
 }
 
 // Add selectWinner function if it's missing
