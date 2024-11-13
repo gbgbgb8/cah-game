@@ -570,7 +570,7 @@ function handleCzarChoice(data) {
     gameState.phase = GAME_PHASES.SHOWING_WINNER;
     updateGameDisplay();
     
-    // Start new round after delay
+    // Start new round after delay, but only if we're the host
     if (gameState.isHost) {
         setTimeout(() => {
             startNewRound();
@@ -580,6 +580,13 @@ function handleCzarChoice(data) {
 
 function startNewRound() {
     if (!gameState.isHost) return;
+    
+    // Store current state
+    const currentState = {
+        playedCards: gameState.playedCards,
+        judgingCards: gameState.judgingCards,
+        roundWinner: gameState.roundWinner
+    };
     
     // Rotate czar
     const czarIndex = gameState.players.findIndex(p => p.id === gameState.czar);
@@ -593,7 +600,6 @@ function startNewRound() {
     const newCards = {};
     gameState.players.forEach(player => {
         if (player.id !== nextCzar) {
-            // Get a new card for each player who played
             const newCard = gameState.gameData.white[
                 gameState.roundNumber * gameState.players.length + 
                 Object.keys(newCards).length
@@ -608,7 +614,8 @@ function startNewRound() {
         blackCard: nextBlackCard,
         czar: nextCzar,
         roundNumber: gameState.roundNumber + 1,
-        newCards: newCards
+        newCards: newCards,
+        previousState: currentState // Include previous state
     };
     
     broadcastToAll({
@@ -620,17 +627,22 @@ function startNewRound() {
 }
 
 function handleNewRound(setup) {
+    // Store the current state before updating
+    const previousCzar = gameState.czar;
+    
     // Update game state for new round
     gameState.blackCard = setup.blackCard;
     gameState.czar = setup.czar;
     gameState.roundNumber = setup.roundNumber;
     
-    // Clear played cards and judging cards for new round
-    gameState.playedCards = [];
-    gameState.judgingCards = null;
+    // Only clear cards if we're the one who played them
+    if (previousCzar === gameState.peer.id) {
+        gameState.playedCards = [];
+        gameState.judgingCards = null;
+    }
+    
     gameState.selectedCard = null;
     gameState.roundWinner = null;
-    
     gameState.phase = GAME_PHASES.SELECTING;
     
     // Add new card to hand if we got one
@@ -642,7 +654,8 @@ function handleNewRound(setup) {
         phase: gameState.phase,
         czar: gameState.czar,
         playedCards: gameState.playedCards,
-        hand: gameState.hand
+        hand: gameState.hand,
+        previousCzar: previousCzar
     });
     
     updateGameDisplay();
@@ -763,9 +776,9 @@ function showGameOver() {
 
 // Add function to handle judging start
 function handleJudgingStart(data) {
-    // Keep a copy of the cards for judging
+    // Keep both copies of the cards
     gameState.judgingCards = data.cards;
-    gameState.playedCards = data.cards;
+    gameState.playedCards = [...data.cards]; // Make a copy
     gameState.phase = GAME_PHASES.JUDGING;
     updateGameDisplay();
 }
