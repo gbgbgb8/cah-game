@@ -167,6 +167,10 @@ function handleConnection(conn) {
 function handleGameMessage(message) {
     console.log('Received message:', message);
     switch (message.type) {
+        case 'error':
+            showError(message.data.message);
+            showScreen('join');
+            break;
         case 'join_request':
             handleJoinRequest(message.data, message.peer);
             break;
@@ -203,6 +207,7 @@ async function createRoom() {
         gameState.isHost = true;
         
         const peer = await initializePeer();
+        gameState.hostPeerId = peer.id;
         peer.on('connection', handleConnection);
         
         gameState.players = [{
@@ -210,6 +215,8 @@ async function createRoom() {
             name: gameState.playerName,
             isHost: true
         }];
+        
+        localStorage.setItem(gameState.roomCode, peer.id);
         
         showScreen('lobby');
         elements.displays.roomCode.textContent = gameState.roomCode;
@@ -245,11 +252,18 @@ function connectToHost() {
     return new Promise((resolve, reject) => {
         showConnectionStatus('Connecting to room...');
         
-        const conn = gameState.peer.connect(gameState.roomCode);
+        const hostPeerId = localStorage.getItem(gameState.roomCode);
+        
+        if (!hostPeerId) {
+            reject(new Error('Room not found'));
+            return;
+        }
+        
+        const conn = gameState.peer.connect(hostPeerId);
         const timeout = setTimeout(() => {
             conn.close();
             reject(new Error('Connection timeout'));
-        }, 10000); // 10 second timeout
+        }, 10000);
 
         conn.on('open', () => {
             clearTimeout(timeout);
@@ -258,7 +272,8 @@ function connectToHost() {
                 type: 'join_request',
                 data: {
                     name: gameState.playerName,
-                    id: gameState.peer.id
+                    id: gameState.peer.id,
+                    roomCode: gameState.roomCode
                 }
             });
             hideConnectionStatus();
@@ -377,6 +392,18 @@ function removePlayer(playerId) {
 // Add player management functions
 function handleJoinRequest(data, peerId) {
     if (!gameState.isHost) return;
+    if (data.roomCode !== gameState.roomCode) {
+        // Wrong room code
+        const conn = gameState.connections[peerId];
+        if (conn) {
+            conn.send({
+                type: 'error',
+                data: { message: 'Invalid room code' }
+            });
+            conn.close();
+        }
+        return;
+    }
     
     const newPlayer = {
         id: data.id,
@@ -569,4 +596,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
     hideConnectionStatus();
+});
+
+// Add cleanup when leaving/closing
+window.addEventListener('beforeunload', () => {
+    if (gameState.isHost) {
+        localStorage.removeItem(gameState.roomCode);
+    }
 });
