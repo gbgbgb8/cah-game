@@ -231,6 +231,12 @@ function handleGameMessage(message) {
             }
             updateGameDisplay();
             break;
+        case 'score_update':
+            handleScoreUpdate(message.data);
+            break;
+        case 'game_over':
+            handleGameOver(message.data);
+            break;
     }
 }
 
@@ -302,10 +308,11 @@ function setupNewGame() {
     const shuffledWhiteCards = _.shuffle(gameState.gameData.white);
     
     const playerHands = {};
-    gameState.scores = {};
+    // Initialize scores for all players
+    const initialScores = {};
     gameState.players.forEach(player => {
         playerHands[player.id] = shuffledWhiteCards.splice(0, CARDS_PER_HAND);
-        gameState.scores[player.id] = 0;
+        initialScores[player.id] = 0;
     });
     
     // Choose first Czar randomly
@@ -315,7 +322,8 @@ function setupNewGame() {
         blackCards: shuffledBlackCards,
         playerHands: playerHands,
         firstCzar: firstCzar,
-        roundNumber: 1
+        roundNumber: 1,
+        scores: initialScores  // Include initial scores in game setup
     };
 }
 
@@ -327,6 +335,7 @@ function startGame(gameSetup) {
     gameState.phase = GAME_PHASES.SELECTING;
     gameState.roundNumber = gameSetup.roundNumber;
     gameState.playedCards = [];
+    gameState.scores = gameSetup.scores;  // Initialize scores from game setup
     
     showScreen('game');
     updateGameDisplay();
@@ -660,9 +669,10 @@ function updatePlayersBar() {
     gameState.players.forEach(player => {
         const div = document.createElement('div');
         div.className = `player-score ${player.id === gameState.czar ? 'czar' : ''}`;
+        const score = gameState.scores[player.id] || 0;
         div.innerHTML = `
             <div>${player.name}</div>
-            <div>${gameState.scores[player.id] || 0} pts</div>
+            <div>${score} ${score === 1 ? 'pt' : 'pts'}</div>
             ${player.id === gameState.czar ? '<div>(Czar)</div>' : ''}
         `;
         elements.displays.playersBar.appendChild(div);
@@ -777,11 +787,7 @@ function selectWinner(winnerId) {
 function handleCzarChoice(data) {
     console.log('Handling czar choice:', data);
     
-    // Use judgingCards if available, otherwise use playedCards
     const cardsToCheck = gameState.judgingCards || gameState.playedCards;
-    console.log('Cards available for judging:', cardsToCheck);
-    
-    // Find the winning play using playerId
     const winner = cardsToCheck.find(play => play.playerId === data.winnerId);
     
     if (!winner) {
@@ -791,17 +797,45 @@ function handleCzarChoice(data) {
     }
     
     gameState.roundWinner = winner;
-    gameState.scores[winner.playerId] = (gameState.scores[winner.playerId] || 0) + 1;
+    
+    // Update scores
+    const updatedScores = {...gameState.scores};
+    updatedScores[winner.playerId] = (updatedScores[winner.playerId] || 0) + 1;
+    gameState.scores = updatedScores;
     
     // Check if someone won the game
     if (gameState.scores[winner.playerId] >= POINTS_TO_WIN) {
         gameState.gameWinner = winner;
         gameState.phase = GAME_PHASES.GAME_OVER;
+        
+        // Broadcast final game state
+        if (gameState.isHost) {
+            broadcastToAll({
+                type: 'game_over',
+                data: {
+                    winner: winner,
+                    finalScores: gameState.scores
+                }
+            });
+        }
+        
         updateGameDisplay();
         return;
     }
     
     gameState.phase = GAME_PHASES.SHOWING_WINNER;
+    
+    // Broadcast score update to all players
+    if (gameState.isHost) {
+        broadcastToAll({
+            type: 'score_update',
+            data: {
+                scores: gameState.scores,
+                roundWinner: winner
+            }
+        });
+    }
+    
     updateGameDisplay();
     
     // Start new round after delay, but only if we're the host
@@ -961,5 +995,19 @@ function initializeCardTabs() {
             }
         });
     });
+}
+
+// Add new handler functions
+function handleScoreUpdate(data) {
+    gameState.scores = data.scores;
+    gameState.roundWinner = data.roundWinner;
+    updateGameDisplay();
+}
+
+function handleGameOver(data) {
+    gameState.gameWinner = data.winner;
+    gameState.scores = data.finalScores;
+    gameState.phase = GAME_PHASES.GAME_OVER;
+    updateGameDisplay();
 }
 
