@@ -457,7 +457,7 @@ function initializePeer() {
     });
 }
 
-// Update handlePlayedCard function to ensure judging phase starts correctly
+// Update handlePlayedCard function to better handle phase transitions
 function handlePlayedCard(data) {
     console.log('Handling played card:', data);
     
@@ -480,15 +480,6 @@ function handlePlayedCard(data) {
     
     // If we're the host, check if all players have played
     if (gameState.isHost) {
-        // Broadcast updated played cards to all players
-        broadcastToAll({
-            type: 'cards_update',
-            data: {
-                playedCards: gameState.playedCards,
-                phase: gameState.phase
-            }
-        });
-        
         // Count how many players need to submit (everyone except czar)
         const totalPlayers = gameState.players.length;
         const nonCzarPlayers = totalPlayers - 1; // Subtract 1 for czar
@@ -503,6 +494,15 @@ function handlePlayedCard(data) {
             currentPhase: gameState.phase
         });
         
+        // First broadcast the played card update
+        broadcastToAll({
+            type: 'cards_update',
+            data: {
+                playedCards: gameState.playedCards
+            }
+        });
+        
+        // If all cards are in, start judging
         if (cardsPlayed === nonCzarPlayers) {
             console.log('All players have submitted cards, starting judging phase');
             startJudging();
@@ -512,7 +512,7 @@ function handlePlayedCard(data) {
     updateGameDisplay();
 }
 
-// Update startJudging function to ensure proper phase transition
+// Update startJudging function
 function startJudging() {
     console.log('Starting judging phase');
     
@@ -530,13 +530,12 @@ function startJudging() {
     gameState.playedCards = shuffledCards;
     gameState.judgingCards = shuffledCards;
     
-    // Then broadcast to all players
+    // Broadcast the judging phase start to all players
     broadcastToAll({
         type: 'judging_start',
         data: {
             cards: shuffledCards,
-            blackCard: gameState.blackCard,
-            phase: GAME_PHASES.JUDGING
+            blackCard: gameState.blackCard
         }
     });
     
@@ -544,11 +543,22 @@ function startJudging() {
     updateGameDisplay();
 }
 
+// Update handleJudgingStart function
 function handleJudgingStart(data) {
-    console.log('Starting judging phase with data:', data);
+    console.log('Received judging start with data:', data);
+    
+    // Update game state for judging phase
     gameState.phase = GAME_PHASES.JUDGING;
     gameState.judgingCards = data.cards;
     gameState.playedCards = [...data.cards]; // Make a copy
+    
+    console.log('Updated game state for judging:', {
+        phase: gameState.phase,
+        judgingCards: gameState.judgingCards,
+        playedCards: gameState.playedCards,
+        isCzar: gameState.czar === gameState.peer.id
+    });
+    
     updateGameDisplay();
 }
 
@@ -656,9 +666,16 @@ function playCard(index) {
     updateGameDisplay();
 }
 
-// Update updatePlayedCards function to properly show cards during judging
+// Update updatePlayedCards function
 function updatePlayedCards() {
     elements.displays.playedCards.innerHTML = '';
+    
+    console.log('Updating played cards display:', {
+        phase: gameState.phase,
+        playedCards: gameState.playedCards,
+        judgingCards: gameState.judgingCards,
+        isCzar: gameState.czar === gameState.peer.id
+    });
     
     if (gameState.phase === GAME_PHASES.SELECTING) {
         // During selection, show face-down cards for played cards
