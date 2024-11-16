@@ -297,6 +297,7 @@ function setupNewGame() {
     const shuffledWhiteCards = _.shuffle(gameState.gameData.white);
     
     const playerHands = {};
+    gameState.scores = {};
     gameState.players.forEach(player => {
         playerHands[player.id] = shuffledWhiteCards.splice(0, CARDS_PER_HAND);
         gameState.scores[player.id] = 0;
@@ -750,49 +751,44 @@ function handleCzarChoice(data) {
 function startNewRound() {
     if (!gameState.isHost) return;
     
-    // Store current state
-    const currentState = {
-        playedCards: gameState.playedCards,
-        judgingCards: gameState.judgingCards,
-        roundWinner: gameState.roundWinner
-    };
+    // Get next czar
+    const nextCzar = getNextCzar();
     
-    // Rotate czar
-    const czarIndex = gameState.players.findIndex(p => p.id === gameState.czar);
-    const nextCzarIndex = (czarIndex + 1) % gameState.players.length;
-    const nextCzar = gameState.players[nextCzarIndex].id;
-    
-    // Get next black card
-    const nextBlackCard = gameState.gameData.black[gameState.roundNumber];
-    
-    // Deal new white cards to all players
+    // Deal new cards to replace played ones
     const newCards = {};
     gameState.players.forEach(player => {
-        if (player.id !== nextCzar) {
-            const newCard = gameState.gameData.white[
-                gameState.roundNumber * gameState.players.length + 
-                Object.keys(newCards).length
-            ];
+        // Only deal new cards to players who played cards (not the previous czar)
+        if (player.id !== gameState.czar) {
+            const cardIndex = gameState.roundNumber * gameState.players.length + 
+                Object.keys(newCards).length;
+            const newCard = gameState.gameData.white[cardIndex];
             if (newCard) {
                 newCards[player.id] = newCard;
             }
         }
     });
-    
-    const newSetup = {
+
+    // Get next black card
+    const nextBlackCard = gameState.gameData.black[gameState.roundNumber];
+
+    const roundSetup = {
         blackCard: nextBlackCard,
         czar: nextCzar,
         roundNumber: gameState.roundNumber + 1,
         newCards: newCards,
-        previousState: currentState
+        previousState: {
+            playedCards: gameState.playedCards,
+            judgingCards: gameState.judgingCards,
+            roundWinner: gameState.roundWinner
+        }
     };
-    
+
     broadcastToAll({
         type: 'new_round',
-        data: newSetup
+        data: roundSetup
     });
-    
-    handleNewRound(newSetup);
+
+    handleNewRound(roundSetup);
 }
 
 // Add handleNewRound function if it's missing
@@ -804,30 +800,26 @@ function handleNewRound(setup) {
     gameState.blackCard = setup.blackCard;
     gameState.czar = setup.czar;
     gameState.roundNumber = setup.roundNumber;
-    
-    // Only clear cards if we're the one who played them
-    if (previousCzar === gameState.peer.id) {
-        gameState.playedCards = [];
-        gameState.judgingCards = null;
-    }
-    
+    gameState.playedCards = [];
+    gameState.judgingCards = null;
     gameState.selectedCard = null;
     gameState.roundWinner = null;
     gameState.phase = GAME_PHASES.SELECTING;
-    
+
     // Add new card to hand if we got one
     if (setup.newCards && setup.newCards[gameState.peer.id]) {
         gameState.hand.push(setup.newCards[gameState.peer.id]);
     }
-    
-    console.log('New round state:', {
-        phase: gameState.phase,
+
+    // Log round transition for debugging
+    console.log('New round started:', {
+        roundNumber: gameState.roundNumber,
         czar: gameState.czar,
-        playedCards: gameState.playedCards,
-        hand: gameState.hand,
-        previousCzar: previousCzar
+        previousCzar: previousCzar,
+        handSize: gameState.hand.length,
+        phase: gameState.phase
     });
-    
+
     updateGameDisplay();
 }
 
@@ -850,4 +842,14 @@ function showGameOver() {
             hostStartGame();
         }
     });
+}
+
+// Add these functions after handleCzarChoice
+
+function getNextCzar() {
+    // Find current czar's index
+    const currentCzarIndex = gameState.players.findIndex(p => p.id === gameState.czar);
+    // Get next player's index (wrap around to 0 if at end)
+    const nextCzarIndex = (currentCzarIndex + 1) % gameState.players.length;
+    return gameState.players[nextCzarIndex].id;
 }
