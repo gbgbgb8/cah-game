@@ -468,19 +468,19 @@ function initializePeer() {
     });
 }
 
-// Update handlePlayedCard function to properly handle phase transitions
+// Updated handlePlayedCard function
 function handlePlayedCard(data) {
     console.log('Handling played card:', data);
-    
+
     // Only accept cards during selection phase
     if (gameState.phase !== GAME_PHASES.SELECTING) {
         console.log('Ignoring played card - wrong phase:', gameState.phase);
         return;
     }
-    
+
     // Remove any existing plays from this player
     gameState.playedCards = gameState.playedCards.filter(card => card.playerId !== data.playerId);
-    
+
     // Add the new play with complete data
     const playedCard = {
         playerId: data.playerId,
@@ -488,45 +488,35 @@ function handlePlayedCard(data) {
         card: data.card
     };
     gameState.playedCards.push(playedCard);
-    
-    // If we're the host, check if all players have played
-    if (gameState.isHost) {
-        // Count how many players need to submit (everyone except czar)
-        const totalPlayers = gameState.players.length;
-        const nonCzarPlayers = totalPlayers - 1; // Subtract 1 for czar
-        const cardsPlayed = gameState.playedCards.length;
-        
-        console.log('Game status:', {
-            totalPlayers,
-            nonCzarPlayers,
-            cardsPlayed,
-            czarId: gameState.czar,
-            playedCards: gameState.playedCards,
-            currentPhase: gameState.phase
-        });
-        
-        // First broadcast the played card update
-        broadcastToAll({
-            type: 'cards_update',
-            data: {
-                playedCards: gameState.playedCards
-            }
-        });
-        
-        // If all cards are in, start judging
-        if (cardsPlayed === nonCzarPlayers) {
-            console.log('All players have submitted cards, starting judging phase');
-            startJudging();
+
+    // Broadcast the played card update
+    broadcastToAll({
+        type: 'cards_update',
+        data: {
+            playedCards: gameState.playedCards
         }
-    } else {
-        // For non-host players, check if we should transition to judging
-        const nonCzarPlayers = gameState.players.filter(p => p.id !== gameState.czar).length;
-        if (gameState.playedCards.length === nonCzarPlayers) {
-            console.log('All cards are in, waiting for host to start judging');
-            // We don't call startJudging here as only the host should initiate the phase change
-        }
+    });
+
+    // Check if all cards are played (excluding the Czar)
+    const totalPlayers = gameState.players.length;
+    const nonCzarPlayers = gameState.players.filter(p => p.id !== gameState.czar).length;
+    const cardsPlayed = gameState.playedCards.length;
+
+    console.log('Game status:', {
+        totalPlayers,
+        nonCzarPlayers,
+        cardsPlayed,
+        czarId: gameState.czar,
+        playedCards: gameState.playedCards,
+        currentPhase: gameState.phase
+    });
+
+    // Start judging if all non-Czar players have played
+    if (cardsPlayed === nonCzarPlayers) {
+        console.log('All players have submitted cards, starting judging phase');
+        startJudging();
     }
-    
+
     updateGameDisplay();
 }
 
