@@ -476,8 +476,9 @@ function handlePlayedCard(data) {
     };
     gameState.playedCards.push(playedCard);
     
-    // If we're the host, broadcast the updated played cards to all players
+    // If we're the host, check if all players have played
     if (gameState.isHost) {
+        // Broadcast updated played cards to all players
         broadcastToAll({
             type: 'cards_update',
             data: {
@@ -487,9 +488,12 @@ function handlePlayedCard(data) {
         
         // Check if all non-czar players have played
         const nonCzarPlayers = gameState.players.filter(p => p.id !== gameState.czar).length;
+        console.log('Players who need to play:', nonCzarPlayers, 'Current plays:', gameState.playedCards.length);
+        
         if (gameState.playedCards.length === nonCzarPlayers) {
             console.log('All players have played, starting judging phase');
-            startJudging();
+            // Add slight delay before starting judging phase
+            setTimeout(() => startJudging(), 1000);
         }
     }
     
@@ -500,12 +504,16 @@ function handlePlayedCard(data) {
 function startJudging() {
     if (gameState.phase !== GAME_PHASES.SELECTING) return;
     
-    gameState.phase = GAME_PHASES.JUDGING;
-    
     // Create a deep copy of played cards to prevent reference issues
     const cardsWithData = JSON.parse(JSON.stringify(gameState.playedCards));
     const shuffledCards = _.shuffle(cardsWithData);
     
+    // First update local state
+    gameState.phase = GAME_PHASES.JUDGING;
+    gameState.playedCards = shuffledCards;
+    gameState.judgingCards = shuffledCards;
+    
+    // Then broadcast to all players
     broadcastToAll({
         type: 'judging_start',
         data: {
@@ -514,20 +522,15 @@ function startJudging() {
         }
     });
     
-    // Update local played cards with shuffled order
-    gameState.playedCards = shuffledCards;
-    gameState.judgingCards = shuffledCards;
-    
-    console.log('Starting judging phase with cards:', gameState.playedCards);
+    console.log('Starting judging phase with cards:', shuffledCards);
     updateGameDisplay();
 }
 
 function handleJudgingStart(data) {
-    // Keep both copies of the cards
+    console.log('Starting judging phase with data:', data);
+    gameState.phase = GAME_PHASES.JUDGING;
     gameState.judgingCards = data.cards;
     gameState.playedCards = [...data.cards]; // Make a copy
-    gameState.phase = GAME_PHASES.JUDGING;
-    console.log('Received judging start, updating display with cards:', data.cards);
     updateGameDisplay();
 }
 
