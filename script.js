@@ -222,7 +222,7 @@ function handleGameMessage(message) {
             handleNewRound(message.data);
             break;
         case 'cards_update':
-            // Update played cards for all players
+            // Update local played cards array
             gameState.playedCards = message.data.playedCards;
             updateGameDisplay();
             break;
@@ -455,7 +455,7 @@ function initializePeer() {
     });
 }
 
-// Update handlePlayedCard function to properly transition to judging
+// Update handlePlayedCard function to better track player submissions
 function handlePlayedCard(data) {
     console.log('Handling played card:', data);
     
@@ -486,12 +486,21 @@ function handlePlayedCard(data) {
             }
         });
         
-        // Check if all non-czar players have played
-        const nonCzarPlayers = gameState.players.filter(p => p.id !== gameState.czar).length;
-        console.log('Players who need to play:', nonCzarPlayers, 'Current plays:', gameState.playedCards.length);
+        // Count how many players need to submit (everyone except czar)
+        const totalPlayers = gameState.players.length;
+        const nonCzarPlayers = totalPlayers - 1; // Subtract 1 for czar
+        const cardsPlayed = gameState.playedCards.length;
         
-        if (gameState.playedCards.length === nonCzarPlayers) {
-            console.log('All players have played, starting judging phase');
+        console.log('Game status:', {
+            totalPlayers,
+            nonCzarPlayers,
+            cardsPlayed,
+            czarId: gameState.czar,
+            playedCards: gameState.playedCards
+        });
+        
+        if (cardsPlayed === nonCzarPlayers) {
+            console.log('All players have submitted cards, starting judging phase');
             // Add slight delay before starting judging phase
             setTimeout(() => startJudging(), 1000);
         }
