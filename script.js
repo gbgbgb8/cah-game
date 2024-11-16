@@ -455,7 +455,7 @@ function initializePeer() {
     });
 }
 
-// Update handlePlayedCard function to broadcast played cards to all players
+// Update handlePlayedCard function to properly transition to judging
 function handlePlayedCard(data) {
     console.log('Handling played card:', data);
     
@@ -484,17 +484,11 @@ function handlePlayedCard(data) {
                 playedCards: gameState.playedCards
             }
         });
-    }
-    
-    console.log('Current played cards:', gameState.playedCards);
-    console.log('Total players:', gameState.players.length);
-    console.log('Current czar:', gameState.czar);
-    
-    // Check if all non-czar players have played
-    const nonCzarPlayers = gameState.players.length - 1; // Subtract 1 for czar
-    if (gameState.playedCards.length === nonCzarPlayers) {
-        console.log('All players have played, starting judging phase');
-        if (gameState.isHost) {
+        
+        // Check if all non-czar players have played
+        const nonCzarPlayers = gameState.players.filter(p => p.id !== gameState.czar).length;
+        if (gameState.playedCards.length === nonCzarPlayers) {
+            console.log('All players have played, starting judging phase');
             startJudging();
         }
     }
@@ -502,28 +496,27 @@ function handlePlayedCard(data) {
     updateGameDisplay();
 }
 
+// Update startJudging function
 function startJudging() {
     if (gameState.phase !== GAME_PHASES.SELECTING) return;
     
     gameState.phase = GAME_PHASES.JUDGING;
     
-    // Reveal all cards
-    if (gameState.isHost) {
-        // Create a deep copy of played cards to prevent reference issues
-        const cardsWithData = JSON.parse(JSON.stringify(gameState.playedCards));
-        const shuffledCards = _.shuffle(cardsWithData);
-        
-        broadcastToAll({
-            type: 'judging_start',
-            data: {
-                cards: shuffledCards,
-                blackCard: gameState.blackCard
-            }
-        });
-        
-        // Update local played cards with shuffled order
-        gameState.playedCards = shuffledCards;
-    }
+    // Create a deep copy of played cards to prevent reference issues
+    const cardsWithData = JSON.parse(JSON.stringify(gameState.playedCards));
+    const shuffledCards = _.shuffle(cardsWithData);
+    
+    broadcastToAll({
+        type: 'judging_start',
+        data: {
+            cards: shuffledCards,
+            blackCard: gameState.blackCard
+        }
+    });
+    
+    // Update local played cards with shuffled order
+    gameState.playedCards = shuffledCards;
+    gameState.judgingCards = shuffledCards;
     
     console.log('Starting judging phase with cards:', gameState.playedCards);
     updateGameDisplay();
@@ -642,46 +635,44 @@ function playCard(index) {
     updateGameDisplay();
 }
 
-// Update updatePlayedCards to show cards properly based on game phase
+// Update updatePlayedCards function to properly show cards during judging
 function updatePlayedCards() {
     elements.displays.playedCards.innerHTML = '';
     
-    // Use the appropriate cards array based on game phase
-    const cardsToShow = gameState.phase === GAME_PHASES.JUDGING ? 
-        (gameState.judgingCards || gameState.playedCards) : 
-        gameState.playedCards;
-    
     if (gameState.phase === GAME_PHASES.SELECTING) {
         // During selection, show face-down cards for played cards
-        cardsToShow.forEach(played => {
+        gameState.playedCards.forEach(played => {
             const div = document.createElement('div');
             div.className = 'white-card face-down';
             div.textContent = played.playerName + ' has played';
             elements.displays.playedCards.appendChild(div);
         });
-    } else {
-        // During judging or showing winner, show card text
+    } else if (gameState.phase === GAME_PHASES.JUDGING) {
+        // During judging, show all cards face-up
+        const cardsToShow = gameState.judgingCards || gameState.playedCards;
         cardsToShow.forEach(played => {
             const div = document.createElement('div');
-            div.className = 'white-card' + 
-                (gameState.phase === GAME_PHASES.SHOWING_WINNER && 
-                 played.playerId === gameState.roundWinner?.playerId ? ' winner' : '');
-            
+            div.className = 'white-card';
             div.textContent = played.card.text;
             
-            if (gameState.phase === GAME_PHASES.JUDGING && gameState.czar === gameState.peer.id) {
+            // Make cards clickable only for the Czar
+            if (gameState.czar === gameState.peer.id) {
                 div.onclick = () => selectWinner(played.playerId);
+                div.classList.add('clickable');
             }
             
             elements.displays.playedCards.appendChild(div);
         });
+    } else if (gameState.phase === GAME_PHASES.SHOWING_WINNER) {
+        // Show winner card highlighted
+        gameState.playedCards.forEach(played => {
+            const div = document.createElement('div');
+            div.className = 'white-card' + 
+                (played.playerId === gameState.roundWinner?.playerId ? ' winner' : '');
+            div.textContent = played.card.text;
+            elements.displays.playedCards.appendChild(div);
+        });
     }
-    
-    console.log('Updated played cards display:', {
-        phase: gameState.phase,
-        cardsShown: cardsToShow.length,
-        isCzar: gameState.czar === gameState.peer.id
-    });
 }
 
 // Add selectWinner function if it's missing
@@ -853,3 +844,25 @@ function getNextCzar() {
     const nextCzarIndex = (currentCzarIndex + 1) % gameState.players.length;
     return gameState.players[nextCzarIndex].id;
 }
+
+// Add CSS class for clickable cards
+function addStyleToHead() {
+    const style = document.createElement('style');
+    style.textContent = `
+        .white-card.clickable {
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        .white-card.clickable:hover {
+            border-color: #9333ea;
+            transform: translateY(-5px);
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// Call this when the game loads
+document.addEventListener('DOMContentLoaded', () => {
+    addStyleToHead();
+    // ... rest of your initialization code
+});
