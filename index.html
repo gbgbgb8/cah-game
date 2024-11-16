@@ -46,12 +46,27 @@
         <!-- Game Screen -->
         <div id="gameScreen" class="screen hidden">
             <div class="game-container">
-                <div class="players-bar" id="playersBar"></div>
+                <!-- Compact header with scores -->
+                <div class="game-header">
+                    <div class="players-bar" id="playersBar"></div>
+                </div>
+
+                <!-- Compact black card -->
                 <div class="black-card-container">
                     <div class="black-card" id="blackCard"></div>
                 </div>
-                <div class="played-cards" id="playedCards"></div>
-                <div class="hand-container" id="playerHand"></div>
+
+                <!-- Cards area with tabs -->
+                <div class="cards-container">
+                    <div class="cards-tabs">
+                        <button class="tab active" data-tab="played">Played Cards</button>
+                        <button class="tab" data-tab="hand">Your Hand</button>
+                    </div>
+                    <div class="cards-content">
+                        <div id="playedCards" class="white-cards-grid"></div>
+                        <div id="playerHand" class="white-cards-grid hidden"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
