@@ -222,8 +222,10 @@ function handleGameMessage(message) {
             handleNewRound(message.data);
             break;
         case 'cards_update':
-            // Update local played cards array
             gameState.playedCards = message.data.playedCards;
+            if (message.data.phase) {
+                gameState.phase = message.data.phase;
+            }
             updateGameDisplay();
             break;
     }
@@ -455,7 +457,7 @@ function initializePeer() {
     });
 }
 
-// Update handlePlayedCard function to better track player submissions
+// Update handlePlayedCard function to ensure judging phase starts correctly
 function handlePlayedCard(data) {
     console.log('Handling played card:', data);
     
@@ -482,7 +484,8 @@ function handlePlayedCard(data) {
         broadcastToAll({
             type: 'cards_update',
             data: {
-                playedCards: gameState.playedCards
+                playedCards: gameState.playedCards,
+                phase: gameState.phase
             }
         });
         
@@ -496,22 +499,27 @@ function handlePlayedCard(data) {
             nonCzarPlayers,
             cardsPlayed,
             czarId: gameState.czar,
-            playedCards: gameState.playedCards
+            playedCards: gameState.playedCards,
+            currentPhase: gameState.phase
         });
         
         if (cardsPlayed === nonCzarPlayers) {
             console.log('All players have submitted cards, starting judging phase');
-            // Add slight delay before starting judging phase
-            setTimeout(() => startJudging(), 1000);
+            startJudging();
         }
     }
     
     updateGameDisplay();
 }
 
-// Update startJudging function
+// Update startJudging function to ensure proper phase transition
 function startJudging() {
-    if (gameState.phase !== GAME_PHASES.SELECTING) return;
+    console.log('Starting judging phase');
+    
+    if (gameState.phase !== GAME_PHASES.SELECTING) {
+        console.log('Cannot start judging - wrong phase:', gameState.phase);
+        return;
+    }
     
     // Create a deep copy of played cards to prevent reference issues
     const cardsWithData = JSON.parse(JSON.stringify(gameState.playedCards));
@@ -527,11 +535,12 @@ function startJudging() {
         type: 'judging_start',
         data: {
             cards: shuffledCards,
-            blackCard: gameState.blackCard
+            blackCard: gameState.blackCard,
+            phase: GAME_PHASES.JUDGING
         }
     });
     
-    console.log('Starting judging phase with cards:', shuffledCards);
+    console.log('Judging phase started with cards:', shuffledCards);
     updateGameDisplay();
 }
 
@@ -794,8 +803,10 @@ function startNewRound() {
     handleNewRound(roundSetup);
 }
 
-// Add handleNewRound function if it's missing
+// Update handleNewRound function to properly reset state
 function handleNewRound(setup) {
+    console.log('Starting new round with setup:', setup);
+    
     // Store the current state before updating
     const previousCzar = gameState.czar;
     
@@ -814,13 +825,13 @@ function handleNewRound(setup) {
         gameState.hand.push(setup.newCards[gameState.peer.id]);
     }
 
-    // Log round transition for debugging
-    console.log('New round started:', {
+    console.log('New round state:', {
         roundNumber: gameState.roundNumber,
         czar: gameState.czar,
         previousCzar: previousCzar,
         handSize: gameState.hand.length,
-        phase: gameState.phase
+        phase: gameState.phase,
+        isCzar: gameState.czar === gameState.peer.id
     });
 
     updateGameDisplay();
