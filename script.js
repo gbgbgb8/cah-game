@@ -213,6 +213,7 @@ function handleGameMessage(message) {
             handlePlayedCard(message.data);
             break;
         case 'judging_start':
+            console.log('Received judging_start message');
             handleJudgingStart(message.data);
             break;
         case 'czar_choice':
@@ -222,6 +223,7 @@ function handleGameMessage(message) {
             handleNewRound(message.data);
             break;
         case 'cards_update':
+            console.log('Received cards_update message:', message.data);
             gameState.playedCards = message.data.playedCards;
             if (message.data.phase) {
                 gameState.phase = message.data.phase;
@@ -466,7 +468,7 @@ function initializePeer() {
     });
 }
 
-// Update handlePlayedCard function to better handle phase transitions
+// Update handlePlayedCard function to properly handle phase transitions
 function handlePlayedCard(data) {
     console.log('Handling played card:', data);
     
@@ -516,12 +518,19 @@ function handlePlayedCard(data) {
             console.log('All players have submitted cards, starting judging phase');
             startJudging();
         }
+    } else {
+        // For non-host players, check if we should transition to judging
+        const nonCzarPlayers = gameState.players.filter(p => p.id !== gameState.czar).length;
+        if (gameState.playedCards.length === nonCzarPlayers) {
+            console.log('All cards are in, waiting for host to start judging');
+            // We don't call startJudging here as only the host should initiate the phase change
+        }
     }
     
     updateGameDisplay();
 }
 
-// Update startJudging function to ensure proper phase transition
+// Update startJudging function
 function startJudging() {
     console.log('Starting judging phase');
     
@@ -534,7 +543,7 @@ function startJudging() {
     const cardsWithData = JSON.parse(JSON.stringify(gameState.playedCards));
     const shuffledCards = _.shuffle(cardsWithData);
     
-    // First update local state
+    // Update local state first
     gameState.phase = GAME_PHASES.JUDGING;
     gameState.playedCards = shuffledCards;
     gameState.judgingCards = shuffledCards;
