@@ -104,6 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.buttons.join.addEventListener('click', joinRoom);
     elements.buttons.create.addEventListener('click', createRoom);
     elements.buttons.start.addEventListener('click', hostStartGame);
+    initializeCardTabs();
 });
 
 // Add broadcastToAll utility function
@@ -228,11 +229,6 @@ function handleGameMessage(message) {
             if (message.data.phase) {
                 gameState.phase = message.data.phase;
             }
-            updateGameDisplay();
-            break;
-        case 'score_update':
-            gameState.scores = message.data.scores;
-            gameState.roundWinner = message.data.roundWinner;
             updateGameDisplay();
             break;
     }
@@ -381,6 +377,14 @@ function updateGameDisplay() {
         judgingCardsCount: gameState.judgingCards?.length,
         selectedCard: gameState.selectedCard
     });
+
+    // Show appropriate tab based on game phase
+    const tabs = document.querySelectorAll('.tab');
+    if (gameState.phase === GAME_PHASES.SELECTING && gameState.czar !== gameState.peer.id) {
+        tabs[1].click(); // Show hand tab
+    } else {
+        tabs[0].click(); // Show played cards tab
+    }
 }
 
 // Add createCardElement function
@@ -806,19 +810,6 @@ function handleCzarChoice(data) {
             startNewRound();
         }, 3000);
     }
-    
-    gameState.scores[winner.playerId] += 1;
-    
-    // Add this new broadcast
-    if (gameState.isHost) {
-        broadcastToAll({
-            type: 'score_update',
-            data: {
-                scores: gameState.scores,
-                roundWinner: winner
-            }
-        });
-    }
 }
 
 // Add startNewRound function
@@ -947,4 +938,28 @@ document.addEventListener('DOMContentLoaded', () => {
     addStyleToHead();
     //  rest of your initialization code
 });
+
+// Add this new function after your existing code
+function initializeCardTabs() {
+    const tabs = document.querySelectorAll('.tab');
+    const playedCards = document.getElementById('playedCards');
+    const playerHand = document.getElementById('playerHand');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Update active tab
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            // Show/hide corresponding content
+            if (tab.dataset.tab === 'played') {
+                playedCards.classList.remove('hidden');
+                playerHand.classList.add('hidden');
+            } else {
+                playerHand.classList.remove('hidden');
+                playedCards.classList.add('hidden');
+            }
+        });
+    });
+}
 
