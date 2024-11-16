@@ -890,7 +890,6 @@ function handleNewRound(setup) {
 
     updateGameDisplay();
 }
-
 // Add showGameOver function if it's missing
 function showGameOver() {
     const winner = gameState.players.find(p => p.id === gameState.gameWinner.playerId);
