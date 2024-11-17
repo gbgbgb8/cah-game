@@ -237,6 +237,14 @@ function handleGameMessage(message) {
         case 'game_over':
             handleGameOver(message.data);
             break;
+        case 'new_game_same_players':
+            startGame(message.data);
+            break;
+        case 'room_disbanded':
+            showError(message.data.message);
+            resetGameState();
+            showScreen('join');
+            break;
     }
 }
 
@@ -922,54 +930,135 @@ function handleNewRound(setup) {
     });
 
     updateGameDisplay();
-}// Add showGameOver function if it's missing
+}
+
+// Update showGameOver function to include options for a new game
 function showGameOver() {
     const winner = gameState.players.find(p => p.id === gameState.gameWinner.playerId);
     
+    // Create a game over display
     elements.displays.blackCard.innerHTML = `
         <h2>Game Over!</h2>
         <p>${winner.name} wins with ${gameState.scores[winner.id]} Awesome Points!</p>
     `;
     
     elements.displays.playedCards.innerHTML = '';
+    
+    // Show different options based on whether player is host
     elements.displays.playerHand.innerHTML = `
-        <button id="newGameBtn" class="btn btn-primary">Play Again</button>
+        <div class="game-over-options">
+            ${gameState.isHost ? `
+                <button id="newGameBtn" class="btn btn-primary">Start New Game</button>
+                <button id="disbandRoomBtn" class="btn btn-secondary">Disband Room</button>
+            ` : `
+                <p>Waiting for host to start a new game...</p>
+                <button id="leaveRoomBtn" class="btn btn-secondary">Leave Room</button>
+            `}
+        </div>
     `;
     
-    document.getElementById('newGameBtn')?.addEventListener('click', () => {
-        if (gameState.isHost) {
-            hostStartGame();
-        }
+    // Add event listeners for the buttons
+    if (gameState.isHost) {
+        document.getElementById('newGameBtn')?.addEventListener('click', startNewGameSamePlayers);
+        document.getElementById('disbandRoomBtn')?.addEventListener('click', disbandRoom);
+    } else {
+        document.getElementById('leaveRoomBtn')?.addEventListener('click', leaveRoom);
+    }
+}
+
+// Add new functions for game over actions
+function startNewGameSamePlayers() {
+    if (!gameState.isHost) return;
+    
+    // Reset necessary game state but keep players
+    const gameSetup = setupNewGame();
+    
+    // Broadcast new game to all players
+    broadcastToAll({
+        type: 'new_game_same_players',
+        data: gameSetup
     });
-}
-// Add these functions after handleCzarChoice
-
-function getNextCzar() {
-    // Find current czar's index
-    const currentCzarIndex = gameState.players.findIndex(p => p.id === gameState.czar);
-    // Get next player's index (wrap around to 0 if at end)
-    const nextCzarIndex = (currentCzarIndex + 1) % gameState.players.length;
-    return gameState.players[nextCzarIndex].id;
+    
+    // Start the new game
+    startGame(gameSetup);
 }
 
-// Add CSS class for clickable cards
-function addStyleToHead() {
+function disbandRoom() {
+    if (!gameState.isHost) return;
+    
+    // Notify all players that the room is being disbanded
+    broadcastToAll({
+        type: 'room_disbanded',
+        data: { message: 'The host has disbanded the room.' }
+    });
+    
+    // Reset and return to join screen
+    resetGameState();
+    showScreen('join');
+}
+
+function leaveRoom() {
+    // Close all connections
+    Object.values(gameState.connections).forEach(conn => conn.close());
+    
+    // Reset and return to join screen
+    resetGameState();
+    showScreen('join');
+}
+
+// Add function to reset game state
+function resetGameState() {
+    gameState = {
+        screen: 'join',
+        playerName: '',
+        roomCode: '',
+        isHost: false,
+        players: [],
+        gameData: gameState.gameData, // Keep the loaded cards data
+        hand: [],
+        blackCard: null,
+        playedCards: [],
+        roundWinner: null,
+        czar: null,
+        selectedCard: null,
+        connections: {},
+        peer: null,
+        phase: null,
+        judgingCards: null,
+        scores: {}
+    };
+}
+
+// Add some CSS to style the game over options
+function addGameOverStyles() {
     const style = document.createElement('style');
     style.textContent = `
-        .white-card.clickable {
-            cursor: pointer;
-            border: 2px solid transparent;
+        .game-over-options {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            align-items: center;
+            margin: 2rem auto;
+            max-width: 300px;
         }
-        .white-card.clickable:hover {
-            border-color: #9333ea;
-            transform: translateY(-5px);
+        
+        .game-over-options button {
+            width: 100%;
+        }
+        
+        .game-over-options p {
+            color: #666;
+            text-align: center;
+            margin-bottom: 1rem;
         }
     `;
     document.head.appendChild(style);
 }
+
 // Call this when the game loads
 document.addEventListener('DOMContentLoaded', () => {
     addStyleToHead();
+    addGameOverStyles();
     //  rest of your initialization code
 });
 
