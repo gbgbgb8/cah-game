@@ -8,13 +8,17 @@ let gameState = {
     screen: 'join',
     playerName: '',
     roomCode: '',
+    hostPeerId: null,
     isHost: false,
     players: [],
     gameData: null,
+    whiteDeck: [],
+    blackDeck: [],
     hand: [],
     blackCard: null,
     playedCards: [],
     roundWinner: null,
+    gameWinner: null,
     czar: null,
     selectedCard: null,
     connections: {},
@@ -90,8 +94,31 @@ function hideConnectionStatus() {
     elements.displays.connectionStatus.classList.add('hidden');
 }
 
+// Deck management
+function resetDecks() {
+    if (!gameState.gameData) return;
+    gameState.whiteDeck = _.shuffle([...gameState.gameData.white]);
+    gameState.blackDeck = _.shuffle([...gameState.gameData.black]);
+}
+
+function drawWhiteCards(count) {
+    const cards = [];
+    for (let i = 0; i < count; i += 1) {
+        const card = gameState.whiteDeck.shift();
+        if (card) {
+            cards.push(card);
+        }
+    }
+    return cards;
+}
+
+function drawBlackCard() {
+    return gameState.blackDeck.shift() || null;
+}
+
 // Initialize game when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
+    addStyleToHead();
     showConnectionStatus('Loading game data...');
     const loaded = await loadGameData();
     if (!loaded) {
@@ -237,6 +264,8 @@ function handleGameMessage(message) {
         case 'game_over':
             handleGameOver(message.data);
             break;
+        default:
+            console.warn('Unhandled message type:', message.type, message);
     }
 }
 
@@ -276,7 +305,7 @@ function setupRoomCodeCopy() {
             const originalText = roomCodeDisplay.textContent;
             roomCodeDisplay.textContent = 'Copied!';
             setTimeout(() => {
-                roomCodeDisplay.textContent = `Room Code: ${gameState.roomCode}`;
+                roomCodeDisplay.textContent = originalText || gameState.roomCode;
             }, 1000);
         } catch (err) {
             console.error('Failed to copy:', err);
@@ -304,37 +333,38 @@ function hostStartGame() {
 
 // Add setupNewGame function
 function setupNewGame() {
-    const shuffledBlackCards = _.shuffle(gameState.gameData.black);
-    const shuffledWhiteCards = _.shuffle(gameState.gameData.white);
-    
+    resetDecks();
+
     const playerHands = {};
-    // Initialize scores for all players
     const initialScores = {};
     gameState.players.forEach(player => {
-        playerHands[player.id] = shuffledWhiteCards.splice(0, CARDS_PER_HAND);
+        playerHands[player.id] = drawWhiteCards(CARDS_PER_HAND);
         initialScores[player.id] = 0;
     });
     
-    // Choose first Czar randomly
     const firstCzar = gameState.players[Math.floor(Math.random() * gameState.players.length)].id;
-    
+    const firstBlackCard = drawBlackCard() || gameState.gameData.black[0];
+
     return {
-        blackCards: shuffledBlackCards,
-        playerHands: playerHands,
-        firstCzar: firstCzar,
+        blackCard: firstBlackCard,
+        playerHands,
+        firstCzar,
         roundNumber: 1,
-        scores: initialScores  // Include initial scores in game setup
+        scores: initialScores
     };
 }
 
 // Add startGame function
 function startGame(gameSetup) {
-    gameState.hand = gameSetup.playerHands[gameState.peer.id];
-    gameState.blackCard = gameSetup.blackCards[0];
+    gameState.hand = gameSetup.playerHands[gameState.peer.id] || [];
+    gameState.blackCard = gameSetup.blackCard || gameState.blackCard || gameState.gameData?.black?.[0];
     gameState.czar = gameSetup.firstCzar;
     gameState.phase = GAME_PHASES.SELECTING;
     gameState.roundNumber = gameSetup.roundNumber;
     gameState.playedCards = [];
+    gameState.selectedCard = null;
+    gameState.roundWinner = null;
+    gameState.gameWinner = null;
     gameState.scores = gameSetup.scores;  // Initialize scores from game setup
     
     showScreen('game');
@@ -850,25 +880,27 @@ function handleCzarChoice(data) {
 function startNewRound() {
     if (!gameState.isHost) return;
     
-    // Get next czar
     const nextCzar = getNextCzar();
     
-    // Deal new cards to replace played ones
     const newCards = {};
     gameState.players.forEach(player => {
-        // Only deal new cards to players who played cards (not the previous czar)
         if (player.id !== gameState.czar) {
-            const cardIndex = gameState.roundNumber * gameState.players.length + 
-                Object.keys(newCards).length;
-            const newCard = gameState.gameData.white[cardIndex];
+            const [newCard] = drawWhiteCards(1);
             if (newCard) {
                 newCards[player.id] = newCard;
             }
         }
     });
 
-    // Get next black card
-    const nextBlackCard = gameState.gameData.black[gameState.roundNumber];
+    let nextBlackCard = drawBlackCard();
+    if (!nextBlackCard && gameState.gameData?.black?.length) {
+        console.warn('Black card deck empty, reshuffling.');
+        gameState.blackDeck = _.shuffle([...gameState.gameData.black]);
+        nextBlackCard = drawBlackCard();
+    }
+    if (!nextBlackCard) {
+        nextBlackCard = gameState.blackCard;
+    }
 
     const roundSetup = {
         blackCard: nextBlackCard,
@@ -898,7 +930,7 @@ function handleNewRound(setup) {
     const previousCzar = gameState.czar;
     
     // Update game state for new round
-    gameState.blackCard = setup.blackCard;
+    gameState.blackCard = setup.blackCard || gameState.blackCard;
     gameState.czar = setup.czar;
     gameState.roundNumber = setup.roundNumber;
     gameState.playedCards = [];
@@ -967,11 +999,6 @@ function addStyleToHead() {
     `;
     document.head.appendChild(style);
 }
-// Call this when the game loads
-document.addEventListener('DOMContentLoaded', () => {
-    addStyleToHead();
-    //  rest of your initialization code
-});
 
 // Add this new function after your existing code
 function initializeCardTabs() {
