@@ -2,6 +2,8 @@
 const MIN_PLAYERS = 2;
 const CARDS_PER_HAND = 10;
 const POINTS_TO_WIN = 5;
+const RANDO_ID = 'rando-cardrissian';
+const RANDO_NAME = 'Rando Cardrissian';
 
 // Game State Management
 let gameState = {
@@ -14,6 +16,8 @@ let gameState = {
     gameData: null,
     whiteDeck: [],
     blackDeck: [],
+    includeRando: false,
+    randoHand: [],
     hand: [],
     blackCard: null,
     playedCards: [],
@@ -51,6 +55,12 @@ const elements = {
         join: document.getElementById('joinRoomBtn'),
         create: document.getElementById('createRoomBtn'),
         start: document.getElementById('startGameBtn')
+    },
+    checkboxes: {
+        includeRando: document.getElementById('includeRandoCheckbox')
+    },
+    containers: {
+        randoOption: document.getElementById('randoOption')
     },
     displays: {
         error: document.getElementById('errorMsg'),
@@ -316,13 +326,32 @@ function setupRoomCodeCopy() {
 // Add hostStartGame function
 function hostStartGame() {
     if (!gameState.isHost) return;
+    const includeRando = elements.checkboxes.includeRando?.checked;
+
+    // If Rando will join, count them toward the minimum
+    const totalPlayers = gameState.players.length + (includeRando && !gameState.players.find(p => p.id === RANDO_ID) ? 1 : 0);
     
-    if (gameState.players.length < MIN_PLAYERS) {
+    if (totalPlayers < MIN_PLAYERS) {
         showError(`Need at least ${MIN_PLAYERS} players to start`);
         return;
     }
 
+    if (includeRando && !gameState.players.find(p => p.id === RANDO_ID)) {
+        gameState.players.push({
+            id: RANDO_ID,
+            name: RANDO_NAME,
+            isBot: true,
+            isHost: false
+        });
+        broadcastToAll({
+            type: 'player_list',
+            data: gameState.players
+        });
+        updatePlayersList();
+    }
+
     const gameSetup = setupNewGame();
+    gameSetup.includeRando = includeRando;
     broadcastToAll({
         type: 'start_game',
         data: gameSetup
@@ -342,7 +371,9 @@ function setupNewGame() {
         initialScores[player.id] = 0;
     });
     
-    const firstCzar = gameState.players[Math.floor(Math.random() * gameState.players.length)].id;
+    const czarCandidates = gameState.players.filter(p => p.id !== RANDO_ID);
+    const firstCzarPool = czarCandidates.length ? czarCandidates : gameState.players;
+    const firstCzar = firstCzarPool[Math.floor(Math.random() * firstCzarPool.length)].id;
     const firstBlackCard = drawBlackCard() || gameState.gameData.black[0];
 
     return {
@@ -366,9 +397,18 @@ function startGame(gameSetup) {
     gameState.roundWinner = null;
     gameState.gameWinner = null;
     gameState.scores = gameSetup.scores;  // Initialize scores from game setup
+    gameState.includeRando = !!gameSetup.includeRando;
+    if (gameState.isHost) {
+        gameState.randoHand = gameSetup.playerHands[RANDO_ID] || [];
+    }
     
     showScreen('game');
     updateGameDisplay();
+
+    // Kick off Rando's play on the first round
+    if (gameState.isHost) {
+        setTimeout(playRandoCard, 400);
+    }
 }
 
 // Update updateGameDisplay function to better handle judging phase
@@ -466,6 +506,7 @@ async function createRoom() {
         elements.displays.roomCode.textContent = gameState.roomCode;
         setupRoomCodeCopy();
         updatePlayersList();
+        updateLobbyControls();
         
         console.log('Room created:', {
             roomCode: gameState.roomCode,
@@ -673,7 +714,8 @@ function updatePlayersList() {
     elements.displays.playersList.innerHTML = '';
     gameState.players.forEach(player => {
         const li = document.createElement('li');
-        li.textContent = `${player.name}${player.isHost ? ' (Host)' : ''}`;
+        const role = player.isHost ? ' (Host)' : player.id === RANDO_ID ? ' (Bot)' : '';
+        li.textContent = `${player.name}${role}`;
         elements.displays.playersList.appendChild(li);
     });
     
@@ -690,6 +732,24 @@ function updatePlayersList() {
         } else {
             waitingMessage.textContent = `Waiting for more players... (Need ${MIN_PLAYERS - gameState.players.length} more)`;
         }
+    }
+
+    updateLobbyControls();
+}
+
+function updateLobbyControls() {
+    const randoContainer = elements.containers.randoOption;
+    const includeRandoCheckbox = elements.checkboxes.includeRando;
+
+    if (!randoContainer || !includeRandoCheckbox) return;
+
+    if (gameState.isHost) {
+        randoContainer.classList.remove('hidden');
+        includeRandoCheckbox.disabled = false;
+    } else {
+        randoContainer.classList.add('hidden');
+        includeRandoCheckbox.checked = false;
+        includeRandoCheckbox.disabled = true;
     }
 }
 
@@ -726,6 +786,30 @@ function playCard(index) {
     });
     
     updateGameDisplay();
+}
+
+// Host-driven helper for the Rando bot
+function playRandoCard() {
+    if (!gameState.isHost || !gameState.includeRando) return;
+    if (gameState.phase !== GAME_PHASES.SELECTING) return;
+    if (gameState.czar === RANDO_ID) return;
+    if (gameState.playedCards.some(card => card.playerId === RANDO_ID)) return;
+
+    let card = null;
+    if (gameState.randoHand.length) {
+        card = gameState.randoHand.shift();
+    } else {
+        const [drawn] = drawWhiteCards(1);
+        card = drawn || null;
+    }
+
+    if (!card) return;
+
+    handlePlayedCard({
+        playerId: RANDO_ID,
+        playerName: RANDO_NAME,
+        card
+    });
 }
 
 // Update updatePlayedCards function to better handle the judging phase
@@ -943,6 +1027,9 @@ function handleNewRound(setup) {
     if (setup.newCards && setup.newCards[gameState.peer.id]) {
         gameState.hand.push(setup.newCards[gameState.peer.id]);
     }
+    if (gameState.isHost && setup.newCards && setup.newCards[RANDO_ID]) {
+        gameState.randoHand.push(setup.newCards[RANDO_ID]);
+    }
 
     console.log('New round state:', {
         roundNumber: gameState.roundNumber,
@@ -954,6 +1041,9 @@ function handleNewRound(setup) {
     });
 
     updateGameDisplay();
+    if (gameState.isHost) {
+        setTimeout(playRandoCard, 400);
+    }
 }// Add showGameOver function if it's missing
 function showGameOver() {
     const winner = gameState.players.find(p => p.id === gameState.gameWinner.playerId);
@@ -978,10 +1068,14 @@ function showGameOver() {
 
 function getNextCzar() {
     // Find current czar's index
-    const currentCzarIndex = gameState.players.findIndex(p => p.id === gameState.czar);
+    const eligiblePlayers = gameState.players.filter(p => p.id !== RANDO_ID);
+    const currentCzarIndex = eligiblePlayers.findIndex(p => p.id === gameState.czar);
+    if (currentCzarIndex === -1) {
+        return eligiblePlayers[0]?.id || gameState.czar;
+    }
     // Get next player's index (wrap around to 0 if at end)
-    const nextCzarIndex = (currentCzarIndex + 1) % gameState.players.length;
-    return gameState.players[nextCzarIndex].id;
+    const nextCzarIndex = (currentCzarIndex + 1) % eligiblePlayers.length;
+    return eligiblePlayers[nextCzarIndex].id;
 }
 
 // Add CSS class for clickable cards
