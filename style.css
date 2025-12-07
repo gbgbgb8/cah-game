@@ -236,6 +236,17 @@ h3 {
     margin-top: 0.35rem;
 }
 
+.round-winner {
+    margin: 0.5rem 0 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+    color: white;
+    font-weight: 700;
+    text-align: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
 /* Add to existing CSS */
 .white-card {
     background: white;

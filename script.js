@@ -4,6 +4,7 @@ const CARDS_PER_HAND = 10;
 const POINTS_TO_WIN = 5;
 const RANDO_ID = 'rando-cardrissian';
 const RANDO_NAME = 'Rando Cardrissian';
+const isRando = (id) => id === RANDO_ID;
 
 // Game State Management
 let gameState = {
@@ -70,6 +71,7 @@ const elements = {
         blackCard: document.getElementById('blackCard'),
         playedCards: document.getElementById('playedCards'),
         playerHand: document.getElementById('playerHand'),
+        roundWinnerBanner: document.getElementById('roundWinnerBanner'),
         connectionStatus: document.getElementById('connectionStatus'),
         connectionMessage: document.getElementById('connectionMessage')
     }
@@ -327,6 +329,7 @@ function setupRoomCodeCopy() {
 function hostStartGame() {
     if (!gameState.isHost) return;
     const includeRando = elements.checkboxes.includeRando?.checked;
+    gameState.includeRando = !!includeRando;
 
     // If Rando will join, count them toward the minimum
     const totalPlayers = gameState.players.length + (includeRando && !gameState.players.find(p => p.id === RANDO_ID) ? 1 : 0);
@@ -381,7 +384,8 @@ function setupNewGame() {
         playerHands,
         firstCzar,
         roundNumber: 1,
-        scores: initialScores
+        scores: initialScores,
+        includeRando: gameState.includeRando
     };
 }
 
@@ -398,9 +402,9 @@ function startGame(gameSetup) {
     gameState.gameWinner = null;
     gameState.scores = gameSetup.scores;  // Initialize scores from game setup
     gameState.includeRando = !!gameSetup.includeRando;
-    if (gameState.isHost) {
-        gameState.randoHand = gameSetup.playerHands[RANDO_ID] || [];
-    }
+    gameState.randoHand = gameState.isHost && gameState.includeRando
+        ? (gameSetup.playerHands[RANDO_ID] || [])
+        : [];
     
     showScreen('game');
     updateGameDisplay();
@@ -444,6 +448,7 @@ function updateGameDisplay() {
     
     // Update players bar with scores and czar
     updatePlayersBar();
+    updateRoundWinnerBanner();
     
     // Update played cards
     updatePlayedCards();
@@ -607,6 +612,23 @@ function handlePlayedCard(data) {
     }
 
     updateGameDisplay();
+}
+
+function updateRoundWinnerBanner() {
+    const banner = elements.displays.roundWinnerBanner;
+    if (!banner) return;
+
+    const shouldShow = gameState.roundWinner && gameState.phase === GAME_PHASES.SHOWING_WINNER;
+    banner.classList.toggle('hidden', !shouldShow);
+
+    if (!shouldShow) {
+        banner.textContent = '';
+        return;
+    }
+
+    const winnerPlayer = gameState.players.find(p => p.id === gameState.roundWinner.playerId);
+    const winnerName = winnerPlayer?.name || gameState.roundWinner.playerName || 'Winner';
+    banner.textContent = `${winnerName} wins the round!`;
 }
 
 // Update startJudging function
@@ -1027,7 +1049,7 @@ function handleNewRound(setup) {
     if (setup.newCards && setup.newCards[gameState.peer.id]) {
         gameState.hand.push(setup.newCards[gameState.peer.id]);
     }
-    if (gameState.isHost && setup.newCards && setup.newCards[RANDO_ID]) {
+    if (gameState.isHost && gameState.includeRando && setup.newCards && setup.newCards[RANDO_ID]) {
         gameState.randoHand.push(setup.newCards[RANDO_ID]);
     }
 
@@ -1068,7 +1090,7 @@ function showGameOver() {
 
 function getNextCzar() {
     // Find current czar's index
-    const eligiblePlayers = gameState.players.filter(p => p.id !== RANDO_ID);
+    const eligiblePlayers = gameState.players.filter(p => !isRando(p.id));
     const currentCzarIndex = eligiblePlayers.findIndex(p => p.id === gameState.czar);
     if (currentCzarIndex === -1) {
         return eligiblePlayers[0]?.id || gameState.czar;
